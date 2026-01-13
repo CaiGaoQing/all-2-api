@@ -9,7 +9,7 @@ import { initDatabase, CredentialStore } from './src/db.js';
 const KIRO_DIR = 'D:\\个人工作\\ai\\kiro';
 
 async function importKiroTokens() {
-    console.log('正在连接数据库 (43.228.76.217:13306)...');
+    console.log('正在连接数据库 127..0.0.1:13306)...');
     await initDatabase();
     const store = await CredentialStore.create();
 
