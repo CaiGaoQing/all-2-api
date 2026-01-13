@@ -720,9 +720,10 @@ src/
 - 刷新失败的凭据会被移至 `error_credentials` 表，并定期重试
 - 消息历史要求 user/assistant 角色交替，相邻同角色消息会自动合并
 - 默认区域为 `us-east-1`
+
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/svg?repos=CaiGaoQing/kiro-api-client.git&type=date&legend=top-left)](https://www.star-history.com/#CaiGaoQing/kiro-api-client.git&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=CaiGaoQing/kiro-api-client&type=date&legend=top-left)](https://www.star-history.com/#CaiGaoQing/kiro-api-client&type=date&legend=top-left)
 ## 许可证
 
 MIT
