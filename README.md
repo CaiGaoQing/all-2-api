@@ -31,6 +31,23 @@ npm run server
 
 访问 http://localhost:3000 打开管理界面。密码是admin admin123
 
+### Index Page
+![Index Page](https://github.com/CaiGaoQing/kiro-api-client/blob/main/index.png?raw=true)
+
+### Index Page 2
+![Index Page 2](https://github.com/CaiGaoQing/kiro-api-client/blob/main/index2.png?raw=true)
+
+### OAuth Authentication
+![OAuth Authentication](https://github.com/CaiGaoQing/kiro-api-client/blob/main/oauth.png?raw=true)
+
+### API Interface
+![API Interface](https://github.com/CaiGaoQing/kiro-api-client/blob/main/api.png?raw=true)
+
+### Chat Interface
+![Chat Interface](https://github.com/CaiGaoQing/kiro-api-client/blob/main/chat.png?raw=true)
+
+### Usage Statistics
+![Usage Statistics](https://github.com/CaiGaoQing/kiro-api-client/blob/main/usage.png?raw=true)
 ### 运行测试
 
 ```bash
