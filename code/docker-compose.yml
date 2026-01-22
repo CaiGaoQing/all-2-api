@@ -10,6 +10,7 @@ services:
       - "${PORT:-13003}:13003"
     environment:
       - PORT=13003
+      - TZ=Asia/Shanghai
       - MYSQL_HOST=${MYSQL_HOST:-mysql}
       - MYSQL_PORT=${MYSQL_PORT:-3306}
       - MYSQL_USER=${MYSQL_USER:-root}
