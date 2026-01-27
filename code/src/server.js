@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import crypto from 'crypto';
-import { CredentialStore, UserStore, ApiKeyStore, ApiLogStore, GeminiCredentialStore, OrchidsCredentialStore, WarpCredentialStore, TrialApplicationStore, SiteSettingsStore, initDatabase } from './db.js';
+import { CredentialStore, UserStore, ApiKeyStore, ApiLogStore, GeminiCredentialStore, OrchidsCredentialStore, WarpCredentialStore, TrialApplicationStore, SiteSettingsStore, VertexCredentialStore, initDatabase } from './db.js';
 import { KiroClient } from './client.js';
 import { KiroService } from './kiro-service.js';
 import { KiroAPI } from './api.js';
@@ -27,6 +27,7 @@ import {
     getTokenFromCode as getGeminiTokenFromCode,
     startOAuthFlow as startGeminiOAuthFlow
 } from './gemini/antigravity-core.js';
+import { setupVertexRoutes } from './vertex-routes.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -4838,6 +4839,9 @@ async function start() {
     setupWarpProxyRoutes(app, warpStore);
     // console.log(`[${getTimestamp()}] Warp 代理服务已启动`);
 
+    // 设置 Vertex AI 路由
+    await setupVertexRoutes(app);
+
     // 启动定时刷新任务
     startCredentialsRefreshTask();
     startErrorCredentialsRefreshTask();
@@ -4853,6 +4857,7 @@ async function start() {
         console.log('[API]   OpenAI 格式:  /v1/chat/completions');
         console.log('[API]   Gemini 格式:  /gemini-antigravity/v1/messages');
         console.log('[API]   Orchids 格式: /orchids/v1/messages');
+        console.log('[API]   Vertex 格式:  /vertex/v1/messages');
         console.log('[API]   模型列表:     /v1/models');
     });
 }

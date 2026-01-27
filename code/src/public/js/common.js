@@ -228,6 +228,7 @@ function navigateTo(page) {
         'gemini': '/pages/gemini.html',
         'orchids': '/pages/orchids.html',
         'warp': '/pages/warp.html',
+        'vertex': '/pages/vertex.html',
         'chat': '/pages/chat.html',
         'error-accounts': '/pages/error-accounts.html',
         'api-keys': '/pages/api-keys.html',
@@ -297,6 +298,15 @@ function getSidebarHTML(stats = { total: 0, active: 0, error: 0 }) {
                     </svg>
                     Warp 账号
                     <span class="nav-badge" id="nav-warp-count">${stats.warp || 0}</span>
+                </a>
+                <a href="#" class="nav-item" data-page="vertex">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                        <path d="M2 17l10 5 10-5"/>
+                        <path d="M2 12l10 5 10-5"/>
+                    </svg>
+                    Vertex AI
+                    <span class="nav-badge" id="nav-vertex-count">${stats.vertex || 0}</span>
                 </a>
                 <a href="#" class="nav-item" data-page="oauth">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -411,28 +421,32 @@ function getSidebarHTML(stats = { total: 0, active: 0, error: 0 }) {
 // ============ 更新侧边栏统计 ============
 async function updateSidebarStats() {
     try {
-        const [credRes, errorRes, geminiRes, warpRes] = await Promise.all([
+        const [credRes, errorRes, geminiRes, warpRes, vertexRes] = await Promise.all([
             fetch('/api/credentials', { headers: { 'Authorization': `Bearer ${authToken}` } }),
             fetch('/api/error-credentials', { headers: { 'Authorization': `Bearer ${authToken}` } }),
             fetch('/api/gemini/credentials', { headers: { 'Authorization': `Bearer ${authToken}` } }),
-            fetch('/api/warp/statistics', { headers: { 'Authorization': `Bearer ${authToken}` } })
+            fetch('/api/warp/statistics', { headers: { 'Authorization': `Bearer ${authToken}` } }),
+            fetch('/api/vertex/statistics', { headers: { 'Authorization': `Bearer ${authToken}` } })
         ]);
 
         const credResult = await credRes.json();
         const errorResult = await errorRes.json();
         const geminiResult = await geminiRes.json();
         const warpResult = await warpRes.json();
+        const vertexResult = await vertexRes.json();
 
         const credentials = credResult.success ? credResult.data : [];
         const errors = errorResult.success ? errorResult.data : [];
         const geminiCredentials = geminiResult.success ? geminiResult.data : [];
         const warpStats = warpResult.success ? warpResult.data : { total: 0 };
+        const vertexStats = vertexResult || { total: 0 };
 
         const total = credentials.length;
         const active = credentials.filter(c => c.isActive).length;
         const errorCount = errors.length;
         const geminiCount = geminiCredentials.length;
         const warpCount = warpStats.total || 0;
+        const vertexCount = vertexStats.total || 0;
 
         // 更新侧边栏数字
         const totalEl = document.getElementById('stat-total');
@@ -441,6 +455,7 @@ async function updateSidebarStats() {
         const navErrorEl = document.getElementById('nav-error-count');
         const navGeminiEl = document.getElementById('nav-gemini-count');
         const navWarpEl = document.getElementById('nav-warp-count');
+        const navVertexEl = document.getElementById('nav-vertex-count');
 
         if (totalEl) totalEl.textContent = total;
         if (activeEl) activeEl.textContent = active;
@@ -448,11 +463,12 @@ async function updateSidebarStats() {
         if (navErrorEl) navErrorEl.textContent = errorCount;
         if (navGeminiEl) navGeminiEl.textContent = geminiCount;
         if (navWarpEl) navWarpEl.textContent = warpCount;
+        if (navVertexEl) navVertexEl.textContent = vertexCount;
 
-        return { total, active, error: errorCount, gemini: geminiCount, warp: warpCount };
+        return { total, active, error: errorCount, gemini: geminiCount, warp: warpCount, vertex: vertexCount };
     } catch (e) {
         console.error('Update sidebar stats error:', e);
-        return { total: 0, active: 0, error: 0, gemini: 0, warp: 0 };
+        return { total: 0, active: 0, error: 0, gemini: 0, warp: 0, vertex: 0 };
     }
 }
 

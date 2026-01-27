@@ -146,18 +146,34 @@ export async function saveProxyConfig(config) {
 
 /**
  * 获取 axios 请求配置（包含代理）
+ * 优先使用数据库配置，如果未启用则尝试使用环境变量代理
  */
 export function getAxiosProxyConfig() {
+    // 优先使用数据库配置的代理
     const agent = getProxyAgent();
-    if (!agent) {
-        return {};
+    if (agent) {
+        return {
+            httpAgent: agent,
+            httpsAgent: agent,
+            proxy: false  // 禁用 axios 内置代理，使用 agent
+        };
     }
 
-    return {
-        httpAgent: agent,
-        httpsAgent: agent,
-        proxy: false  // 禁用 axios 内置代理，使用 agent
-    };
+    // 如果数据库代理未启用，尝试使用环境变量代理
+    const envProxy = process.env.HTTPS_PROXY || process.env.https_proxy ||
+                     process.env.HTTP_PROXY || process.env.http_proxy;
+    if (envProxy) {
+        const envAgent = createProxyAgent(envProxy);
+        if (envAgent) {
+            return {
+                httpAgent: envAgent,
+                httpsAgent: envAgent,
+                proxy: false
+            };
+        }
+    }
+
+    return {};
 }
 
 /**

@@ -982,10 +982,27 @@ export async function getTokenFromCode(code, redirectUri) {
 }
 
 /**
- * 刷新 Token
+ * 刷新 Token（支持代理）
  */
 export async function refreshGeminiToken(refreshToken) {
-    const authClient = new OAuth2Client(OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET);
+    // 获取代理配置
+    let proxyAgent = getProxyAgent();
+    const proxyUrl = process.env.https_proxy || process.env.HTTPS_PROXY || process.env.http_proxy || process.env.HTTP_PROXY;
+
+    if (!proxyAgent && proxyUrl) {
+        const { HttpsProxyAgent } = await import('https-proxy-agent');
+        proxyAgent = new HttpsProxyAgent(proxyUrl);
+    }
+
+    // 创建带代理的 OAuth2Client
+    const authClientOptions = {};
+    if (proxyAgent) {
+        authClientOptions.transporterOptions = {
+            agent: proxyAgent
+        };
+    }
+
+    const authClient = new OAuth2Client(OAUTH_CLIENT_ID, OAUTH_CLIENT_SECRET, undefined, authClientOptions);
     authClient.setCredentials({ refresh_token: refreshToken });
 
     const { credentials } = await authClient.refreshAccessToken();

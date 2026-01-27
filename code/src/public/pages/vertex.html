@@ -1,0 +1,788 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Vertex AI 账号管理 - Kiro Account Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/common.css">
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        /* Vertex AI 专属样式 */
+        .page-icon.vertex {
+            background: linear-gradient(135deg, #4285f4 0%, #34a853 50%, #fbbc04 100%);
+        }
+
+        .stat-icon.total { background: linear-gradient(135deg, #4285f4, #1a73e8); }
+        .stat-icon.active { background: linear-gradient(135deg, #34a853, #1e8e3e); }
+        .stat-icon.healthy { background: linear-gradient(135deg, #fbbc04, #f9ab00); }
+        .stat-icon.usage { background: linear-gradient(135deg, #ea4335, #d93025); }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        @media (max-width: 1200px) {
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+        }
+
+        @media (max-width: 600px) {
+            .stats-row { grid-template-columns: 1fr; }
+        }
+
+        /* Vertex 卡片样式 */
+        .vertex-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            transition: all var(--transition-normal);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .vertex-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: linear-gradient(90deg, #4285f4, #34a853, #fbbc04, #ea4335);
+            opacity: 0;
+            transition: opacity var(--transition-fast);
+        }
+
+        .vertex-card:hover {
+            border-color: var(--border-light);
+            background: var(--bg-card-hover);
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .vertex-card:hover::before { opacity: 1; }
+
+        .vertex-card.selected {
+            border-color: #4285f4;
+            background: rgba(66, 133, 244, 0.05);
+        }
+
+        .vertex-card.selected::before { opacity: 1; }
+
+        .card-title-section {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .card-title {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .card-subtitle {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        .card-menu-btn {
+            width: 32px;
+            height: 32px;
+            border-radius: var(--radius-sm);
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all var(--transition-fast);
+            flex-shrink: 0;
+        }
+
+        .card-menu-btn:hover {
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+        }
+
+        .card-menu-btn svg { width: 18px; height: 18px; }
+
+        .card-body {
+            margin: 16px 0;
+        }
+
+        .card-info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .card-info-row:last-child { border-bottom: none; }
+
+        .card-info-label {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .card-info-value {
+            font-size: 13px;
+            color: var(--text-secondary);
+            font-weight: 500;
+            max-width: 200px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .card-info-value.error-text {
+            color: var(--accent-danger);
+            font-size: 11px;
+        }
+
+        .card-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding-top: 16px;
+            border-top: 1px solid var(--border-color);
+        }
+
+        .card-date {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .status-badge {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .status-badge.active {
+            background: rgba(52, 168, 83, 0.15);
+            color: #34a853;
+        }
+
+        .status-badge.inactive {
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+        }
+
+        .status-badge.error {
+            background: var(--accent-danger-bg);
+            color: var(--accent-danger);
+        }
+
+        /* 拖拽上传区域 */
+        .drop-zone {
+            border: 2px dashed var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 40px 20px;
+            text-align: center;
+            transition: all var(--transition-fast);
+            cursor: pointer;
+            margin-bottom: 16px;
+        }
+
+        .drop-zone:hover,
+        .drop-zone.drag-over {
+            border-color: #4285f4;
+            background: rgba(66, 133, 244, 0.05);
+        }
+
+        .drop-zone-icon {
+            width: 48px;
+            height: 48px;
+            margin: 0 auto 12px;
+            color: var(--text-muted);
+        }
+
+        .drop-zone-text {
+            font-size: 14px;
+            color: var(--text-secondary);
+            margin-bottom: 4px;
+        }
+
+        .drop-zone-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* 区域选择器样式 */
+        .region-selector {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .region-option {
+            padding: 10px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            text-align: center;
+        }
+
+        .region-option:hover {
+            border-color: var(--border-light);
+            background: var(--bg-elevated);
+        }
+
+        .region-option.selected {
+            border-color: #4285f4;
+            background: rgba(66, 133, 244, 0.1);
+        }
+
+        .region-option-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .region-option-desc {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 2px;
+        }
+
+        /* 批量导入预览 */
+        .import-preview {
+            background: var(--bg-tertiary);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            margin-top: 16px;
+            display: none;
+        }
+
+        .import-preview.show { display: block; }
+
+        .import-preview-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 12px;
+        }
+
+        .import-preview-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .import-preview-item:last-child { border-bottom: none; }
+
+        .import-preview-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #4285f4, #34a853);
+            border-radius: var(--radius-sm);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .import-preview-info { flex: 1; }
+
+        .import-preview-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .import-preview-email {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* 模型展示区域 */
+        .models-section {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+
+        .models-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .models-title {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .models-title svg {
+            color: #fbbc04;
+        }
+
+        .models-endpoint {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        .models-endpoint code {
+            background: var(--bg-tertiary);
+            padding: 4px 8px;
+            border-radius: var(--radius-sm);
+            font-family: 'SF Mono', Monaco, monospace;
+            color: #4285f4;
+        }
+
+        .models-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 12px;
+        }
+
+        .model-card {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 12px 14px;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            position: relative;
+        }
+
+        .model-card:hover {
+            border-color: var(--border-light);
+            background: var(--bg-elevated);
+        }
+
+        .model-card.copied {
+            border-color: #34a853;
+            background: rgba(52, 168, 83, 0.1);
+        }
+
+        .model-card-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-primary);
+            font-family: 'SF Mono', Monaco, monospace;
+            word-break: break-all;
+        }
+
+        .model-card-mapping {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+        }
+
+        .model-card-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            font-size: 9px;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .model-card-badge.claude-4 {
+            background: linear-gradient(135deg, #4285f4, #34a853);
+            color: white;
+        }
+
+        .model-card-badge.claude-3 {
+            background: var(--bg-elevated);
+            color: var(--text-muted);
+        }
+
+        .model-card-copy-hint {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 6px;
+            opacity: 0;
+            transition: opacity var(--transition-fast);
+        }
+
+        .model-card:hover .model-card-copy-hint {
+            opacity: 1;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <div id="sidebar-container"></div>
+
+        <main class="main-content">
+            <header class="header">
+                <div class="header-left">
+                    <div class="page-title-section">
+                        <div class="page-icon vertex">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                <path d="M2 17l10 5 10-5"/>
+                                <path d="M2 12l10 5 10-5"/>
+                            </svg>
+                        </div>
+                        <div>
+                            <h1 class="page-title">Vertex AI 账号管理</h1>
+                            <p class="page-subtitle">管理 GCP Vertex AI 服务账号凭证</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="header-center">
+                    <div class="search-box">
+                        <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="M21 21l-4.35-4.35"/>
+                        </svg>
+                        <input type="text" id="search-input" placeholder="搜索项目ID、邮箱...">
+                    </div>
+                </div>
+                <div class="header-right">
+                    <button class="btn btn-primary" id="add-account-btn">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        添加账号
+                    </button>
+                    <button class="btn btn-secondary" id="import-json-btn">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                            <polyline points="17 8 12 3 7 8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        导入 JSON
+                    </button>
+                </div>
+            </header>
+
+            <div class="content-area" id="vertex-page">
+                <!-- 统计卡片 -->
+                <div class="stats-row">
+                    <div class="stat-card">
+                        <div class="stat-icon total">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                                <path d="M2 17l10 5 10-5"/>
+                                <path d="M2 12l10 5 10-5"/>
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-total">0</span>
+                            <span class="stat-label">总账号数</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon active">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                <polyline points="22 4 12 14.01 9 11.01"/>
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-active">0</span>
+                            <span class="stat-label">活跃账号</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon healthy">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-healthy">0</span>
+                            <span class="stat-label">健康账号</span>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon usage">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                            </svg>
+                        </div>
+                        <div class="stat-info">
+                            <span class="stat-value" id="stat-usage">0</span>
+                            <span class="stat-label">总使用次数</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 支持的模型 -->
+                <div class="models-section" id="models-section">
+                    <div class="models-header">
+                        <h3 class="models-title">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+                                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                            </svg>
+                            支持的模型
+                        </h3>
+                        <span class="models-endpoint">端点: <code>/vertex/v1/messages</code></span>
+                    </div>
+                    <div class="models-grid" id="models-grid">
+                        <!-- 模型列表将通过 JS 动态加载 -->
+                    </div>
+                </div>
+
+                <div class="content-header">
+                    <div class="content-header-left">
+                        <div class="select-all-wrapper">
+                            <input type="checkbox" class="checkbox-custom" id="select-all">
+                            <label class="select-label" for="select-all">全选</label>
+                        </div>
+                        <span class="account-count">共 <strong id="displayed-count">0</strong> 个账号</span>
+                    </div>
+                    <div class="content-header-right">
+                        <button class="btn btn-danger btn-sm" id="batch-delete-btn" style="display: none;">
+                            <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="3 6 5 6 21 6"/>
+                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                            </svg>
+                            批量删除
+                        </button>
+                    </div>
+                </div>
+
+                <div class="cards-grid" id="cards-grid"></div>
+
+                <div class="empty-state" id="empty-state" style="display: none;">
+                    <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+                        <path d="M2 17l10 5 10-5"/>
+                        <path d="M2 12l10 5 10-5"/>
+                    </svg>
+                    <h3 class="empty-title">暂无 Vertex AI 账号</h3>
+                    <p class="empty-description">点击下方按钮添加您的第一个 GCP 服务账号</p>
+                    <button class="btn btn-primary" id="empty-add-btn">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        添加账号
+                    </button>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <!-- Add Account Modal -->
+    <div class="modal-overlay" id="add-modal">
+        <div class="modal" style="max-width: 600px;">
+            <div class="modal-header">
+                <h2 class="modal-title">添加 Vertex AI 账号</h2>
+                <button class="modal-close" id="modal-close">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <form id="add-account-form">
+                    <div class="form-group">
+                        <label class="form-label">名称 <span class="required">*</span></label>
+                        <input type="text" class="form-input" id="account-name" placeholder="账号名称（如：my-vertex-account）" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Project ID <span class="required">*</span></label>
+                        <input type="text" class="form-input" id="project-id" placeholder="GCP 项目 ID" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Client Email <span class="required">*</span></label>
+                        <input type="text" class="form-input" id="client-email" placeholder="xxx@project-id.iam.gserviceaccount.com" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Private Key <span class="required">*</span></label>
+                        <textarea class="form-textarea" id="private-key" style="min-height: 120px; font-family: monospace; font-size: 12px;" placeholder="-----BEGIN PRIVATE KEY-----
+...
+-----END PRIVATE KEY-----" required></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">区域</label>
+                        <select class="form-input" id="region">
+                            <option value="global">global (推荐)</option>
+                            <option value="us-central1">us-central1</option>
+                            <option value="us-east5">us-east5</option>
+                            <option value="europe-west1">europe-west1</option>
+                            <option value="europe-west4">europe-west4</option>
+                            <option value="asia-southeast1">asia-southeast1</option>
+                        </select>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="modal-cancel">取消</button>
+                <button class="btn btn-primary" id="modal-submit">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    添加账号
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Import JSON Modal -->
+    <div class="modal-overlay" id="import-modal">
+        <div class="modal" style="max-width: 700px;">
+            <div class="modal-header">
+                <h2 class="modal-title">导入 GCP 服务账号 JSON</h2>
+                <button class="modal-close" id="import-modal-close">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </div>
+            <div class="modal-body">
+                <!-- 拖拽上传区域 -->
+                <div class="drop-zone" id="drop-zone">
+                    <svg class="drop-zone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    <p class="drop-zone-text">拖拽 JSON 文件到此处，或点击选择文件</p>
+                    <p class="drop-zone-hint">支持 GCP 服务账号密钥 JSON 文件</p>
+                    <input type="file" id="file-input" accept=".json" style="display: none;">
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">账号名称 <span class="required">*</span></label>
+                    <input type="text" class="form-input" id="import-name" placeholder="账号名称（留空将自动从 JSON 提取）">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">区域</label>
+                    <div class="region-selector" id="import-region-selector">
+                        <div class="region-option selected" data-value="global">
+                            <div class="region-option-name">Global</div>
+                            <div class="region-option-desc">推荐</div>
+                        </div>
+                        <div class="region-option" data-value="us-central1">
+                            <div class="region-option-name">US Central</div>
+                            <div class="region-option-desc">us-central1</div>
+                        </div>
+                        <div class="region-option" data-value="us-east5">
+                            <div class="region-option-name">US East</div>
+                            <div class="region-option-desc">us-east5</div>
+                        </div>
+                        <div class="region-option" data-value="europe-west1">
+                            <div class="region-option-name">Europe West</div>
+                            <div class="region-option-desc">europe-west1</div>
+                        </div>
+                        <div class="region-option" data-value="europe-west4">
+                            <div class="region-option-name">Europe NL</div>
+                            <div class="region-option-desc">europe-west4</div>
+                        </div>
+                        <div class="region-option" data-value="asia-southeast1">
+                            <div class="region-option-name">Asia SE</div>
+                            <div class="region-option-desc">asia-southeast1</div>
+                        </div>
+                    </div>
+                    <input type="hidden" id="import-region" value="global">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">JSON 密钥文件内容 <span class="required">*</span></label>
+                    <textarea class="form-textarea" id="import-json" style="min-height: 200px; font-family: monospace; font-size: 11px;" placeholder='{
+  "type": "service_account",
+  "project_id": "your-project-id",
+  "private_key_id": "xxx",
+  "private_key": "-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n",
+  "client_email": "xxx@your-project-id.iam.gserviceaccount.com",
+  "client_id": "123456789"
+}'></textarea>
+                </div>
+
+                <!-- 导入预览 -->
+                <div class="import-preview" id="import-preview">
+                    <div class="import-preview-title">解析结果</div>
+                    <div class="import-preview-item">
+                        <div class="import-preview-icon" id="preview-icon">GCP</div>
+                        <div class="import-preview-info">
+                            <div class="import-preview-name" id="preview-project">-</div>
+                            <div class="import-preview-email" id="preview-email">-</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" id="import-modal-cancel">取消</button>
+                <button class="btn btn-primary" id="import-modal-submit">
+                    <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                    导入
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Context Menu -->
+    <div class="context-menu" id="context-menu">
+        <div class="context-menu-item" data-action="activate">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                <polyline points="22 4 12 14.01 9 11.01"/>
+            </svg>
+            设为活跃
+        </div>
+        <div class="context-menu-item" data-action="test">
+         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/>
+            </svg>
+            测试连接
+        </div>
+        <div class="context-menu-item" data-action="edit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            编辑
+        </div>
+        <div class="context-menu-divider"></div>
+        <div class="context-menu-item danger" data-action="delete">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                <line x1="10" y1="11" x2="10" y2="17"/>
+                <line x1="14" y1="11" x2="14" y2="17"/>
+            </svg>
+            删除
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <script src="/js/common.js"></script>
+    <script src="/js/vertex.js"></script>
+</body>
+</html>
