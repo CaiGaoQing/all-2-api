@@ -208,6 +208,35 @@ export const MODEL_PRICING = {
     'default': { input: 3, output: 15 }
 };
 
+// 动态定价缓存（从数据库加载）
+let dynamicPricingCache = null;
+let dynamicPricingCacheTime = null;
+const PRICING_CACHE_TTL = 60000; // 60 秒缓存
+
+/**
+ * 设置动态定价缓存
+ * @param {object} pricingMap - 定价映射表 { modelName: { input, output } }
+ */
+export function setDynamicPricing(pricingMap) {
+    dynamicPricingCache = pricingMap;
+    dynamicPricingCacheTime = Date.now();
+}
+
+/**
+ * 获取动态定价
+ */
+export function getDynamicPricing() {
+    return dynamicPricingCache;
+}
+
+/**
+ * 检查动态定价缓存是否有效
+ */
+export function isDynamicPricingValid() {
+    if (!dynamicPricingCache || !dynamicPricingCacheTime) return false;
+    return (Date.now() - dynamicPricingCacheTime) < PRICING_CACHE_TTL;
+}
+
 /**
  * 计算 Token 费用（美元）
  * @param {string} model - 模型名称
@@ -216,7 +245,15 @@ export const MODEL_PRICING = {
  * @returns {object} { inputCost, outputCost, totalCost }
  */
 export function calculateTokenCost(model, inputTokens, outputTokens) {
-    const pricing = MODEL_PRICING[model] || MODEL_PRICING['default'];
+    // 优先使用动态定价（数据库配置）
+    let pricing = null;
+    if (dynamicPricingCache && dynamicPricingCache[model]) {
+        pricing = dynamicPricingCache[model];
+    } else {
+        // 回退到静态配置
+        pricing = MODEL_PRICING[model] || MODEL_PRICING['default'];
+    }
+    
     const inputCost = (inputTokens / 1000000) * pricing.input;
     const outputCost = (outputTokens / 1000000) * pricing.output;
     return {

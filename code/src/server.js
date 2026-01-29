@@ -3,7 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import crypto from 'crypto';
-import { CredentialStore, UserStore, ApiKeyStore, ApiLogStore, GeminiCredentialStore, OrchidsCredentialStore, WarpCredentialStore, TrialApplicationStore, SiteSettingsStore, VertexCredentialStore, initDatabase } from './db.js';
+import { CredentialStore, UserStore, ApiKeyStore, ApiLogStore, GeminiCredentialStore, OrchidsCredentialStore, WarpCredentialStore, TrialApplicationStore, SiteSettingsStore, VertexCredentialStore, ModelPricingStore, initDatabase } from './db.js';
 import { KiroClient } from './kiro/client.js';
 import { KiroService } from './kiro/kiro-service.js';
 import { KiroAPI } from './kiro/api.js';
@@ -15,7 +15,7 @@ import { WarpService, WARP_MODELS, refreshAccessToken, isTokenExpired, getEmailF
 import { setupWarpRoutes } from './warp/warp-routes.js';
 import { setupWarpMultiAgentRoutes } from './warp/warp-multi-agent.js';
 import { setupWarpProxyRoutes } from './warp/warp-proxy.js';
-import { KIRO_CONSTANTS, MODEL_PRICING, calculateTokenCost } from './constants.js';
+import { KIRO_CONSTANTS, MODEL_PRICING, calculateTokenCost, setDynamicPricing } from './constants.js';
 import { initProxyConfig, getProxyConfig, saveProxyConfig, testProxyConnection, getAxiosProxyConfig } from './proxy.js';
 import {
     AntigravityApiService,
@@ -88,6 +88,7 @@ let warpStore = null;
 let warpService = null;
 let trialStore = null;
 let siteSettingsStore = null;
+let pricingStore = null;
 
 // 凭据 403 错误计数器
 const credential403Counter = new Map();
@@ -3627,6 +3628,162 @@ app.get('/api/error-credentials/:id/usage', async (req, res) => {
 // 路由已抽离到 gemini/gemini-routes.js
 setupGeminiRoutes(app, geminiStore, getTimestamp);
 
+// ============ 模型定价管理 ============
+
+// 获取所有定价配置
+app.get('/api/pricing', authMiddleware, async (req, res) => {
+    try {
+        const pricing = await pricingStore.getAll();
+        res.json({ success: true, data: pricing });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 获取单个定价配置
+app.get('/api/pricing/:id', authMiddleware, async (req, res) => {
+    try {
+        const pricing = await pricingStore.getById(parseInt(req.params.id));
+        if (!pricing) {
+            return res.status(404).json({ success: false, error: '定价配置不存在' });
+        }
+        res.json({ success: true, data: pricing });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 添加定价配置
+app.post('/api/pricing', authMiddleware, async (req, res) => {
+    try {
+        if (!req.user.isAdmin) {
+            return res.status(403).json({ success: false, error: '需要管理员权限' });
+        }
+        
+        const { modelName, displayName, provider, inputPrice, outputPrice, isActive, sortOrder } = req.body;
+        
+        if (!modelName || inputPrice === undefined || outputPrice === undefined) {
+            return res.status(400).json({ success: false, error: '模型名称、输入价格和输出价格是必需的' });
+        }
+        
+        const id = await pricingStore.add({
+            modelName,
+            displayName,
+            provider,
+            inputPrice: parseFloat(inputPrice),
+            outputPrice: parseFloat(outputPrice),
+            isActive,
+            sortOrder
+        });
+        
+        // 刷新动态定价缓存
+        const pricingMap = await pricingStore.getPricingMap();
+        setDynamicPricing(pricingMap);
+        
+        res.json({ success: true, data: { id } });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 更新定价配置
+app.put('/api/pricing/:id', authMiddleware, async (req, res) => {
+    try {
+        if (!req.user.isAdmin) {
+            return res.status(403).json({ success: false, error: '需要管理员权限' });
+        }
+        
+        const id = parseInt(req.params.id);
+        const pricing = await pricingStore.getById(id);
+        if (!pricing) {
+            return res.status(404).json({ success: false, error: '定价配置不存在' });
+        }
+        
+        const { modelName, displayName, provider, inputPrice, outputPrice, isActive, sortOrder } = req.body;
+        
+        await pricingStore.update(id, {
+            modelName,
+            displayName,
+            provider,
+            inputPrice: inputPrice !== undefined ? parseFloat(inputPrice) : undefined,
+            outputPrice: outputPrice !== undefined ? parseFloat(outputPrice) : undefined,
+            isActive,
+            sortOrder
+        });
+        
+        // 刷新动态定价缓存
+        const pricingMap = await pricingStore.getPricingMap();
+        setDynamicPricing(pricingMap);
+        
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 删除定价配置
+app.delete('/api/pricing/:id', authMiddleware, async (req, res) => {
+    try {
+        if (!req.user.isAdmin) {
+            return res.status(403).json({ success: false, error: '需要管理员权限' });
+        }
+        
+        const id = parseInt(req.params.id);
+        await pricingStore.delete(id);
+        
+        // 刷新动态定价缓存
+        const pricingMap = await pricingStore.getPricingMap();
+        setDynamicPricing(pricingMap);
+        
+        res.json({ success: true });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 批量导入定价配置
+app.post('/api/pricing/batch-import', authMiddleware, async (req, res) => {
+    try {
+        if (!req.user.isAdmin) {
+            return res.status(403).json({ success: false, error: '需要管理员权限' });
+        }
+        
+        const { pricing } = req.body;
+        if (!pricing || !Array.isArray(pricing)) {
+            return res.status(400).json({ success: false, error: '请提供定价配置数组' });
+        }
+        
+        const results = await pricingStore.batchImport(pricing);
+        
+        // 刷新动态定价缓存
+        const pricingMap = await pricingStore.getPricingMap();
+        setDynamicPricing(pricingMap);
+        
+        res.json({ success: true, data: results });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 重置为默认定价配置
+app.post('/api/pricing/reset-default', authMiddleware, async (req, res) => {
+    try {
+        if (!req.user.isAdmin) {
+            return res.status(403).json({ success: false, error: '需要管理员权限' });
+        }
+        
+        const results = await pricingStore.initDefaultPricing();
+        
+        // 刷新动态定价缓存
+        const pricingMap = await pricingStore.getPricingMap();
+        setDynamicPricing(pricingMap);
+        
+        res.json({ success: true, data: results });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
 // ============ API 日志管理 ============
 
 // 获取错误日志列表（状态码 >= 400）
@@ -4291,6 +4448,25 @@ async function start() {
     warpService = new WarpService(warpStore);
     trialStore = await TrialApplicationStore.create();
     siteSettingsStore = await SiteSettingsStore.create();
+    pricingStore = await ModelPricingStore.create();
+
+    // 加载动态定价配置
+    try {
+        const pricingMap = await pricingStore.getPricingMap();
+        if (Object.keys(pricingMap).length > 0) {
+            setDynamicPricing(pricingMap);
+            console.log(`[${getTimestamp()}] 已加载 ${Object.keys(pricingMap).length} 个模型定价配置`);
+        } else {
+            // 如果没有配置，初始化默认定价
+            console.log(`[${getTimestamp()}] 正在初始化默认模型定价配置...`);
+            await pricingStore.initDefaultPricing();
+            const newPricingMap = await pricingStore.getPricingMap();
+            setDynamicPricing(newPricingMap);
+            console.log(`[${getTimestamp()}] 已初始化 ${Object.keys(newPricingMap).length} 个默认定价配置`);
+        }
+    } catch (err) {
+        console.error(`[${getTimestamp()}] 加载定价配置失败:`, err.message);
+    }
 
     // 初始化代理配置
     const proxyConfig = await initProxyConfig();

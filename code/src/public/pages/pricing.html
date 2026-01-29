@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>模型定价管理 - Kiro Account Manager</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/css/common.css">
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        .pricing-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+        }
+        .pricing-actions {
+            display: flex;
+            gap: 12px;
+        }
+        .pricing-table {
+            width: 100%;
+            border-collapse: collapse;
+            background: var(--bg-card);
+            border-radius: 12px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+        .pricing-table th,
+        .pricing-table td {
+            padding: 14px 16px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .pricing-table th {
+            background: var(--bg-tertiary);
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .pricing-table tr:last-child td {
+            border-bottom: none;
+        }
+        .pricing-table tr:hover td {
+            background: var(--bg-tertiary);
+        }
+        .model-name {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        .model-display-name {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        .provider-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+        .provider-anthropic {
+            background: rgba(214, 126, 72, 0.15);
+            color: #d67e48;
+        }
+        .provider-google {
+            background: rgba(66, 133, 244, 0.15);
+            color: #4285f4;
+        }
+        .provider-openai {
+            background: rgba(16, 163, 127, 0.15);
+            color: #10a37f;
+        }
+        .price-cell {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 13px;
+        }
+        .price-input {
+            background: var(--bg-primary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 6px 10px;
+            font-size: 13px;
+            width: 100px;
+            color: var(--text-primary);
+            font-family: 'SF Mono', 'Consolas', monospace;
+        }
+        .price-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+        .status-active {
+            color: var(--status-success);
+        }
+        .status-inactive {
+            color: var(--text-secondary);
+        }
+        .action-btn {
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            cursor: pointer;
+            border: none;
+            transition: all 0.2s;
+        }
+        .action-btn-edit {
+            background: var(--accent-primary);
+            color: white;
+        }
+        .action-btn-edit:hover {
+            background: var(--accent-hover);
+        }
+        .action-btn-delete {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+        .action-btn-delete:hover {
+            background: rgba(239, 68, 68, 0.2);
+        }
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.6);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active {
+            display: flex;
+        }
+        .modal {
+            background: var(--bg-card);
+            border-radius: 16px;
+            padding: 24px;
+            width: 100%;
+            max-width: 480px;
+            border: 1px solid var(--border-color);
+        }
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        .modal-title {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+        .modal-close {
+            background: none;
+            border: none;
+            color: var(--text-secondary);
+            cursor: pointer;
+            font-size: 20px;
+        }
+        .form-group {
+            margin-bottom: 16px;
+        }
+        .form-label {
+            display: block;
+            font-size: 13px;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+        .form-input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 14px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+        .form-input:focus {
+            outline: none;
+            border-color: var(--accent-primary);
+        }
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+        .form-select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            font-size: 14px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+        }
+        .form-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .form-checkbox input {
+            width: 16px;
+            height: 16px;
+        }
+        .modal-footer {
+            display: flex;
+            justify-content: flex-end;
+            gap: 12px;
+            margin-top: 24px;
+        }
+        .btn-cancel {
+            padding: 10px 20px;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-primary);
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .btn-save {
+            padding: 10px 20px;
+            border: none;
+            background: var(--accent-primary);
+            color: white;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .btn-save:hover {
+            background: var(--accent-hover);
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: var(--text-secondary);
+        }
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            margin-bottom: 16px;
+            opacity: 0.5;
+        }
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+        }
+        .stat-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+        .stat-label {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <nav class="sidebar" id="sidebar"></nav>
+        
+        <main class="main-content">
+            <header class="page-header">
+                <h1 class="page-title">模型定价管理</h1>
+                <p class="page-subtitle">配置各模型的输入输出价格（美元/百万tokens）</p>
+            </header>
+
+            <div class="stats-row">
+                <div class="stat-card">
+                    <div class="stat-value" id="totalModels">0</div>
+                    <div class="stat-label">总模型数</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="activeModels">0</div>
+                    <div class="stat-label">启用中</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="anthropicModels">0</div>
+                    <div class="stat-label">Anthropic 模型</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="googleModels">0</div>
+                    <div class="stat-label">Google 模型</div>
+                </div>
+            </div>
+
+            <div class="pricing-header">
+                <div></div>
+                <div class="pricing-actions">
+                    <button class="btn btn-secondary" onclick="resetDefault()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                            <path d="M21 3v5h-5"/>
+                            <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                            <path d="M3 21v-5h5"/>
+                        </svg>
+                        重置默认
+                    </button>
+                    <button class="btn btn-primary" onclick="openAddModal()">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="5" x2="12" y2="19"></line>
+                            <line x1="5" y1="12" x2="19" y2="12"></line>
+                        </svg>
+                        添加定价
+                    </button>
+                </div>
+            </div>
+
+            <div id="pricingContent">
+                <div class="loading">加载中...</div>
+            </div>
+        </main>
+    </div>
+
+    <!-- 添加/编辑模态框 -->
+    <div class="modal-overlay" id="pricingModal">
+        <div class="modal">
+            <div class="modal-header">
+                <h3 class="modal-title" id="modalTitle">添加定价配置</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <form id="pricingForm" onsubmit="savePricing(event)">
+                <input type="hidden" id="pricingId">
+                <div class="form-group">
+                    <label class="form-label">模型名称 *</label>
+                    <input type="text" class="form-input" id="modelName" placeholder="例如: claude-sonnet-4-20250514" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">显示名称</label>
+                    <input type="text" class="form-input" id="displayName" placeholder="例如: Claude Sonnet 4">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">提供商</label>
+                    <select class="form-select" id="provider">
+                        <option value="anthropic">Anthropic</option>
+                        <option value="google">Google</option>
+                        <option value="openai">OpenAI</option>
+                        <option value="other">其他</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">输入价格 ($/M tokens) *</label>
+                        <input type="number" class="form-input" id="inputPrice" step="0.0001" min="0" placeholder="3.00" required>
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">输出价格 ($/M tokens) *</label>
+                        <input type="number" class="form-input" id="outputPrice" step="0.0001" min="0" placeholder="15.00" required>
+                    </div>
+                </div>
+                <div class="form-row">
+                    <div class="form-group">
+                        <label class="form-label">排序</label>
+                        <input type="number" class="form-input" id="sortOrder" value="0" min="0">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">&nbsp;</label>
+                        <div class="form-checkbox">
+                            <input type="checkbox" id="isActive" checked>
+                            <label for="isActive">启用</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn-cancel" onclick="closeModal()">取消</button>
+                    <button type="submit" class="btn-save">保存</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script src="/js/common.js"></script>
+    <script>
+        let pricingList = [];
+
+        async function loadPricing() {
+            try {
+                const response = await fetch('/api/pricing', {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+                });
+                const data = await response.json();
+                if (data.success) {
+                    pricingList = data.data || [];
+                    renderPricing();
+                    updateStats();
+                } else {
+                    console.error('加载定价失败:', data.error);
+                    document.getElementById('pricingContent').innerHTML = 
+                        `<div class="empty-state"><p>加载失败: ${data.error || '未知错误'}</p></div>`;
+                }
+            } catch (error) {
+                console.error('加载定价失败:', error);
+                document.getElementById('pricingContent').innerHTML = 
+                    '<div class="empty-state"><p>加载失败，请刷新重试</p></div>';
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('totalModels').textContent = pricingList.length;
+            document.getElementById('activeModels').textContent = pricingList.filter(p => p.isActive).length;
+            document.getElementById('anthropicModels').textContent = pricingList.filter(p => p.provider === 'anthropic').length;
+            document.getElementById('googleModels').textContent = pricingList.filter(p => p.provider === 'google').length;
+        }
+
+        function renderPricing() {
+            if (pricingList.length === 0) {
+                document.getElementById('pricingContent').innerHTML = `
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.768 0-1.536-.22-2.121-.659-1.172-.879-1.172-2.303 0-3.182s3.07-.879 4.242 0L15 8.819"/>
+                            <circle cx="12" cy="12" r="10"/>
+                        </svg>
+                        <p>暂无定价配置</p>
+                        <button class="btn btn-primary" onclick="resetDefault()" style="margin-top: 16px">初始化默认配置</button>
+                    </div>
+                `;
+                return;
+            }
+
+            const html = `
+                <table class="pricing-table">
+                    <thead>
+                        <tr>
+                            <th>模型</th>
+                            <th>提供商</th>
+                            <th>输入价格</th>
+                            <th>输出价格</th>
+                            <th>状态</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${pricingList.map(p => `
+                            <tr>
+                                <td>
+                                    <div class="model-name">${p.modelName}</div>
+                                    ${p.displayName && p.displayName !== p.modelName ? `<div class="model-display-name">${p.displayName}</div>` : ''}
+                                </td>
+                                <td>
+                                    <span class="provider-badge provider-${p.provider}">${getProviderName(p.provider)}</span>
+                                </td>
+                                <td class="price-cell">$${parseFloat(p.inputPrice).toFixed(4)}</td>
+                                <td class="price-cell">$${parseFloat(p.outputPrice).toFixed(4)}</td>
+                                <td>
+                                    <span class="${p.isActive ? 'status-active' : 'status-inactive'}">
+                                        ${p.isActive ? '启用' : '禁用'}
+                                    </span>
+                                </td>
+                                <td>
+                                    <button class="action-btn action-btn-edit" onclick="editPricing(${p.id})">编辑</button>
+                                    <button class="action-btn action-btn-delete" onclick="deletePricing(${p.id})">删除</button>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            document.getElementById('pricingContent').innerHTML = html;
+        }
+
+        function getProviderName(provider) {
+            const names = {
+                'anthropic': 'Anthropic',
+                'google': 'Google',
+                'openai': 'OpenAI',
+                'other': '其他'
+            };
+            return names[provider] || provider;
+        }
+
+        function openAddModal() {
+            document.getElementById('modalTitle').textContent = '添加定价配置';
+            document.getElementById('pricingId').value = '';
+            document.getElementById('pricingForm').reset();
+            document.getElementById('isActive').checked = true;
+            document.getElementById('pricingModal').classList.add('active');
+        }
+
+        function editPricing(id) {
+            const pricing = pricingList.find(p => p.id === id);
+            if (!pricing) return;
+
+            document.getElementById('modalTitle').textContent = '编辑定价配置';
+            document.getElementById('pricingId').value = pricing.id;
+            document.getElementById('modelName').value = pricing.modelName;
+            document.getElementById('displayName').value = pricing.displayName || '';
+            document.getElementById('provider').value = pricing.provider;
+            document.getElementById('inputPrice').value = pricing.inputPrice;
+            document.getElementById('outputPrice').value = pricing.outputPrice;
+            document.getElementById('sortOrder').value = pricing.sortOrder || 0;
+            document.getElementById('isActive').checked = pricing.isActive;
+            document.getElementById('pricingModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('pricingModal').classList.remove('active');
+        }
+
+        async function savePricing(e) {
+            e.preventDefault();
+            
+            const id = document.getElementById('pricingId').value;
+            const data = {
+                modelName: document.getElementById('modelName').value,
+                displayName: document.getElementById('displayName').value,
+                provider: document.getElementById('provider').value,
+                inputPrice: parseFloat(document.getElementById('inputPrice').value),
+                outputPrice: parseFloat(document.getElementById('outputPrice').value),
+                sortOrder: parseInt(document.getElementById('sortOrder').value) || 0,
+                isActive: document.getElementById('isActive').checked
+            };
+
+            try {
+                const url = id ? `/api/pricing/${id}` : '/api/pricing';
+                const method = id ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${localStorage.getItem('authToken')}`
+                    },
+                    body: JSON.stringify(data)
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    closeModal();
+                    loadPricing();
+                } else {
+                    alert(result.error || '保存失败');
+                }
+            } catch (error) {
+                console.error('保存失败:', error);
+                alert('保存失败');
+            }
+        }
+
+        async function deletePricing(id) {
+            if (!confirm('确定要删除这个定价配置吗？')) return;
+
+            try {
+                const response = await fetch(`/api/pricing/${id}`, {
+                    method: 'DELETE',
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    loadPricing();
+                } else {
+                    alert(result.error || '删除失败');
+                }
+            } catch (error) {
+                console.error('删除失败:', error);
+                alert('删除失败');
+            }
+        }
+
+        async function resetDefault() {
+            if (!confirm('确定要重置为默认定价配置吗？这将更新现有配置并添加缺失的配置。')) return;
+
+            try {
+                const response = await fetch('/api/pricing/reset-default', {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+                });
+
+                const result = await response.json();
+                if (result.success) {
+                    alert(`重置完成！成功: ${result.data.success}, 失败: ${result.data.failed}`);
+                    loadPricing();
+                } else {
+                    alert(result.error || '重置失败');
+                }
+            } catch (error) {
+                console.error('重置失败:', error);
+                alert('重置失败');
+            }
+        }
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', async () => {
+            // 检查登录状态
+            if (!await checkAuth()) return;
+            
+            // 初始化侧边栏
+            document.getElementById('sidebar').innerHTML = getSidebarHTML();
+            initSidebar('pricing');
+            
+            // 加载数据
+            loadPricing();
+            updateSidebarStats();
+        });
+    </script>
+</body>
+</html>

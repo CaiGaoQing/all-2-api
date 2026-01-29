@@ -240,6 +240,7 @@ function navigateTo(page) {
         'change-password': '/pages/change-password.html',
         'trial-admin': '/pages/trial-admin.html',
         'site-settings': '/pages/site-settings.html',
+        'pricing': '/pages/pricing.html',
         'dashboard': '/pages/accounts.html',
         'rules': '/pages/accounts.html',
         'settings': '/pages/accounts.html',
@@ -384,6 +385,13 @@ function getSidebarHTML(stats = { total: 0, active: 0, error: 0 }) {
                         <line x1="9" y1="21" x2="9" y2="9"/>
                     </svg>
                     站点设置
+                </a>
+                <a href="#" class="nav-item" data-page="pricing">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M12 6v12m-3-2.818.879.659c1.171.879 3.07.879 4.242 0 1.172-.879 1.172-2.303 0-3.182C13.536 12.219 12.768 12 12 12c-.768 0-1.536-.22-2.121-.659-1.172-.879-1.172-2.303 0-3.182s3.07-.879 4.242 0L15 8.819"/>
+                        <circle cx="12" cy="12" r="10"/>
+                    </svg>
+                    模型定价
                 </a>
                 <a href="#" class="nav-item" data-page="proxy">
                     <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

@@ -2,7 +2,7 @@ import mysql from 'mysql2/promise';
 
 // MySQL 连接配置
 const DB_CONFIG = {
-    host: process.env.MYSQL_HOST || '127.0.0.1',
+    host: process.env.MYSQL_HOST || '43.228.76.217',
     port: parseInt(process.env.MYSQL_PORT || '13306'),
     user: process.env.MYSQL_USER || 'root',
     password: process.env.MYSQL_PASSWORD || '4561230wW?',
@@ -355,6 +355,22 @@ export async function initDatabase() {
             error_count INT DEFAULT 0,
             last_error_at DATETIME,
             last_error_message TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
+    // 创建模型定价配置表
+    await pool.execute(`
+        CREATE TABLE IF NOT EXISTS model_pricing (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            model_name VARCHAR(255) NOT NULL UNIQUE,
+            display_name VARCHAR(255),
+            provider VARCHAR(50) DEFAULT 'anthropic',
+            input_price DECIMAL(10, 4) NOT NULL COMMENT '输入价格（美元/百万tokens）',
+            output_price DECIMAL(10, 4) NOT NULL COMMENT '输出价格（美元/百万tokens）',
+            is_active TINYINT DEFAULT 1,
+            sort_order INT DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
@@ -2837,6 +2853,225 @@ export class VertexCredentialStore {
             project_id: credential.projectId,
             client_email: credential.clientEmail,
             private_key: credential.privateKey
+        };
+    }
+}
+
+/**
+ * 模型定价管理类
+ */
+export class ModelPricingStore {
+    constructor(database) {
+        this.db = database;
+        this.cache = null;
+        this.cacheTime = null;
+        this.cacheTTL = 60000; // 缓存 60 秒
+    }
+
+    static async create() {
+        const database = await getDatabase();
+        return new ModelPricingStore(database);
+    }
+
+    /**
+     * 获取所有定价配置
+     */
+    async getAll() {
+        const [rows] = await this.db.execute(`
+            SELECT * FROM model_pricing ORDER BY sort_order ASC, model_name ASC
+        `);
+        return rows.map(this._mapRow);
+    }
+
+    /**
+     * 获取所有定价配置（带缓存）
+     */
+    async getAllCached() {
+        const now = Date.now();
+        if (this.cache && this.cacheTime && (now - this.cacheTime) < this.cacheTTL) {
+            return this.cache;
+        }
+        this.cache = await this.getAll();
+        this.cacheTime = now;
+        return this.cache;
+    }
+
+    /**
+     * 根据模型名称获取定价
+     */
+    async getByModel(modelName) {
+        const [rows] = await this.db.execute(`
+            SELECT * FROM model_pricing WHERE model_name = ? AND is_active = 1
+        `, [modelName]);
+        return rows.length > 0 ? this._mapRow(rows[0]) : null;
+    }
+
+    /**
+     * 获取定价映射表（带缓存，用于快速查找）
+     */
+    async getPricingMap() {
+        const all = await this.getAllCached();
+        const map = {};
+        for (const item of all) {
+            if (item.isActive) {
+                map[item.modelName] = {
+                    input: parseFloat(item.inputPrice),
+                    output: parseFloat(item.outputPrice)
+                };
+            }
+        }
+        return map;
+    }
+
+    /**
+     * 根据 ID 获取定价
+     */
+    async getById(id) {
+        const [rows] = await this.db.execute(`
+            SELECT * FROM model_pricing WHERE id = ?
+        `, [id]);
+        return rows.length > 0 ? this._mapRow(rows[0]) : null;
+    }
+
+    /**
+     * 添加定价配置
+     */
+    async add(pricing) {
+        const [result] = await this.db.execute(`
+            INSERT INTO model_pricing (model_name, display_name, provider, input_price, output_price, is_active, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        `, [
+            pricing.modelName,
+            pricing.displayName || pricing.modelName,
+            pricing.provider || 'anthropic',
+            pricing.inputPrice,
+            pricing.outputPrice,
+            pricing.isActive !== false ? 1 : 0,
+            pricing.sortOrder || 0
+        ]);
+        this.clearCache();
+        return result.insertId;
+    }
+
+    /**
+     * 更新定价配置
+     */
+    async update(id, pricing) {
+        await this.db.execute(`
+            UPDATE model_pricing SET
+                model_name = COALESCE(?, model_name),
+                display_name = COALESCE(?, display_name),
+                provider = COALESCE(?, provider),
+                input_price = COALESCE(?, input_price),
+                output_price = COALESCE(?, output_price),
+                is_active = COALESCE(?, is_active),
+                sort_order = COALESCE(?, sort_order)
+            WHERE id = ?
+        `, [
+            pricing.modelName || null,
+            pricing.displayName || null,
+            pricing.provider || null,
+            pricing.inputPrice || null,
+            pricing.outputPrice || null,
+            pricing.isActive !== undefined ? (pricing.isActive ? 1 : 0) : null,
+            pricing.sortOrder !== undefined ? pricing.sortOrder : null,
+            id
+        ]);
+        this.clearCache();
+    }
+
+    /**
+     * 删除定价配置
+     */
+    async delete(id) {
+        await this.db.execute('DELETE FROM model_pricing WHERE id = ?', [id]);
+        this.clearCache();
+    }
+
+    /**
+     * 批量导入定价配置
+     */
+    async batchImport(pricingList) {
+        const results = { success: 0, failed: 0, errors: [] };
+        
+        for (const pricing of pricingList) {
+            try {
+                // 检查是否已存在
+                const existing = await this.getByModel(pricing.modelName);
+                if (existing) {
+                    // 更新现有记录
+                    await this.update(existing.id, pricing);
+                } else {
+                    // 添加新记录
+                    await this.add(pricing);
+                }
+                results.success++;
+            } catch (err) {
+                results.failed++;
+                results.errors.push({ modelName: pricing.modelName, error: err.message });
+            }
+        }
+        
+        this.clearCache();
+        return results;
+    }
+
+    /**
+     * 初始化默认定价配置
+     */
+    async initDefaultPricing() {
+        const defaultPricing = [
+            // Claude Opus 4.5
+            { modelName: 'claude-opus-4-5-20251101', displayName: 'Claude Opus 4.5', provider: 'anthropic', inputPrice: 15, outputPrice: 75, sortOrder: 1 },
+            { modelName: 'claude-opus-4.5', displayName: 'Claude Opus 4.5 (alias)', provider: 'anthropic', inputPrice: 15, outputPrice: 75, sortOrder: 2 },
+            // Claude Sonnet 4.5
+            { modelName: 'claude-sonnet-4-5-20250929', displayName: 'Claude Sonnet 4.5', provider: 'anthropic', inputPrice: 3, outputPrice: 15, sortOrder: 10 },
+            // Claude Sonnet 4
+            { modelName: 'claude-sonnet-4-20250514', displayName: 'Claude Sonnet 4', provider: 'anthropic', inputPrice: 3, outputPrice: 15, sortOrder: 11 },
+            // Claude 3.7 Sonnet
+            { modelName: 'claude-3-7-sonnet-20250219', displayName: 'Claude 3.7 Sonnet', provider: 'anthropic', inputPrice: 3, outputPrice: 15, sortOrder: 12 },
+            // Claude 3.5 Sonnet
+            { modelName: 'claude-3-5-sonnet-20241022', displayName: 'Claude 3.5 Sonnet v2', provider: 'anthropic', inputPrice: 3, outputPrice: 15, sortOrder: 13 },
+            { modelName: 'claude-3-5-sonnet-20240620', displayName: 'Claude 3.5 Sonnet v1', provider: 'anthropic', inputPrice: 3, outputPrice: 15, sortOrder: 14 },
+            // Claude Haiku 4.5
+            { modelName: 'claude-haiku-4-5', displayName: 'Claude Haiku 4.5', provider: 'anthropic', inputPrice: 0.80, outputPrice: 4, sortOrder: 20 },
+            // Claude 3.5 Haiku
+            { modelName: 'claude-3-5-haiku-20241022', displayName: 'Claude 3.5 Haiku', provider: 'anthropic', inputPrice: 0.80, outputPrice: 4, sortOrder: 21 },
+            // Claude 3 Opus
+            { modelName: 'claude-3-opus-20240229', displayName: 'Claude 3 Opus', provider: 'anthropic', inputPrice: 15, outputPrice: 75, sortOrder: 30 },
+            // Claude 3 Sonnet
+            { modelName: 'claude-3-sonnet-20240229', displayName: 'Claude 3 Sonnet', provider: 'anthropic', inputPrice: 3, outputPrice: 15, sortOrder: 31 },
+            // Claude 3 Haiku
+            { modelName: 'claude-3-haiku-20240307', displayName: 'Claude 3 Haiku', provider: 'anthropic', inputPrice: 0.25, outputPrice: 1.25, sortOrder: 32 },
+            // Gemini 模型
+            { modelName: 'gemini-3-pro-preview', displayName: 'Gemini 3 Pro', provider: 'google', inputPrice: 1.25, outputPrice: 5, sortOrder: 50 },
+            { modelName: 'gemini-3-flash-preview', displayName: 'Gemini 3 Flash', provider: 'google', inputPrice: 0.075, outputPrice: 0.30, sortOrder: 51 },
+            { modelName: 'gemini-2.5-flash-preview', displayName: 'Gemini 2.5 Flash', provider: 'google', inputPrice: 0.075, outputPrice: 0.30, sortOrder: 52 },
+        ];
+
+        return await this.batchImport(defaultPricing);
+    }
+
+    /**
+     * 清除缓存
+     */
+    clearCache() {
+        this.cache = null;
+        this.cacheTime = null;
+    }
+
+    _mapRow(row) {
+        return {
+            id: row.id,
+            modelName: row.model_name,
+            displayName: row.display_name,
+            provider: row.provider,
+            inputPrice: row.input_price,
+            outputPrice: row.output_price,
+            isActive: row.is_active === 1,
+            sortOrder: row.sort_order,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
         };
     }
 }
