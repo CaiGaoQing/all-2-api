@@ -70,6 +70,197 @@
     height: 16px;
 }
 
+/* Usage Stats Section */
+.usage-stats-section {
+    padding: 20px 28px;
+    background: var(--bg-primary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.usage-stats-section .section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+}
+
+.usage-stats-section .section-title {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.usage-stats-section .section-title svg {
+    color: var(--accent-warning);
+}
+
+.usage-cards {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 16px;
+}
+
+.usage-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    transition: all var(--transition-fast);
+}
+
+.usage-card:hover {
+    border-color: var(--border-light);
+    background: var(--bg-card-hover);
+}
+
+.usage-card-total {
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.08) 0%, rgba(236, 72, 153, 0.05) 100%);
+    border-color: rgba(139, 92, 246, 0.2);
+}
+
+.usage-card-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 16px;
+}
+
+.usage-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: var(--radius-md);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.usage-icon svg {
+    width: 22px;
+    height: 22px;
+}
+
+.usage-icon.credits {
+    background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%);
+    color: white;
+}
+
+.usage-icon.used {
+    background: rgba(245, 158, 11, 0.15);
+    color: var(--accent-warning);
+}
+
+.usage-icon.remaining {
+    background: rgba(16, 185, 129, 0.15);
+    color: var(--accent-success);
+}
+
+.usage-info {
+    flex: 1;
+}
+
+.usage-label {
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.usage-value {
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--text-primary);
+    line-height: 1.2;
+}
+
+.usage-progress-wrapper {
+    margin-top: 4px;
+}
+
+.usage-progress {
+    height: 8px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 10px;
+}
+
+.usage-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #8b5cf6 0%, #ec4899 100%);
+    border-radius: 4px;
+    transition: width 0.5s ease;
+}
+
+.usage-progress-bar.warning {
+    background: linear-gradient(90deg, #f59e0b 0%, #ef4444 100%);
+}
+
+.usage-progress-bar.danger {
+    background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+}
+
+.usage-progress-text {
+    display: flex;
+    justify-content: space-between;
+    font-size: 13px;
+    color: var(--text-muted);
+}
+
+.usage-progress-text strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.usage-percentage {
+    font-size: 32px;
+    font-weight: 700;
+    color: var(--text-primary);
+    text-align: center;
+    padding: 10px 0;
+}
+
+.usage-percentage.warning {
+    color: var(--accent-warning);
+}
+
+.usage-percentage.danger {
+    color: var(--accent-danger);
+}
+
+.usage-accounts-info {
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-muted);
+    padding-top: 10px;
+    border-top: 1px solid var(--border-color);
+}
+
+.usage-accounts-info span {
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
+.btn-sm {
+    padding: 6px 12px !important;
+    font-size: 12px !important;
+}
+
+/* Spinning animation */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spinning {
+    animation: spin 1s linear infinite;
+}
+
 /* Stats Section - Compact 2-row layout */
 .stats-cards {
     padding: 20px 28px;
@@ -257,7 +448,8 @@
     gap: 16px;
 }
 
-.orchids-card {
+/* Orchids Account Card - Kiro Style */
+.orchids-account-card {
     background: var(--bg-card);
     border: 1px solid var(--border-color);
     border-radius: var(--radius-lg);
@@ -267,55 +459,27 @@
     position: relative;
 }
 
-.orchids-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, #8b5cf6, #ec4899);
-    opacity: 0;
-    transition: opacity var(--transition-fast);
-}
-
-.orchids-card:hover {
+.orchids-account-card:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
     border-color: rgba(139, 92, 246, 0.3);
 }
 
-.orchids-card:hover::before {
-    opacity: 1;
-}
-
-.orchids-card.healthy { border-left: 3px solid var(--accent-success); }
-.orchids-card.error { border-left: 3px solid var(--accent-danger); }
-.orchids-card.disabled { 
+.orchids-account-card.healthy { border-left: 3px solid var(--accent-success); }
+.orchids-account-card.error { border-left: 3px solid var(--accent-danger); }
+.orchids-account-card.disabled { 
     opacity: 0.6;
     border-left: 3px solid var(--text-muted);
 }
 
-.orchids-card-header {
-    padding: 14px 16px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(236, 72, 153, 0.03) 100%);
-    border-bottom: 1px solid var(--border-color);
+.orchids-account-card .card-status {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 1;
 }
 
-.orchids-name {
-    font-weight: 600;
-    font-size: 14px;
-    color: var(--text-primary);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 200px;
-}
-
-.orchids-status {
+.orchids-account-card .status-badge {
     font-size: 11px;
     padding: 3px 8px;
     border-radius: 10px;
@@ -324,53 +488,165 @@
     letter-spacing: 0.3px;
 }
 
-.orchids-status.healthy { 
+.orchids-account-card .status-badge.healthy { 
     background: rgba(16, 185, 129, 0.12); 
     color: var(--accent-success); 
 }
-.orchids-status.error { 
+.orchids-account-card .status-badge.error { 
     background: rgba(239, 68, 68, 0.12); 
     color: var(--accent-danger); 
 }
-.orchids-status.disabled { 
+.orchids-account-card .status-badge.disabled { 
     background: var(--bg-tertiary); 
     color: var(--text-muted); 
 }
 
-.orchids-card-body {
-    padding: 14px 16px;
+.orchids-account-card .card-header {
+    padding: 16px;
+    padding-right: 70px;
 }
 
-.orchids-detail-item {
+.orchids-account-card .card-info {
+    flex: 1;
+}
+
+.orchids-account-card .card-email {
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+}
+
+.orchids-account-card .card-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.orchids-account-card .card-meta-divider {
+    width: 4px;
+    height: 4px;
+    background: var(--text-muted);
+    border-radius: 50%;
+    opacity: 0.5;
+}
+
+.orchids-account-card .card-usage {
+    padding: 12px 16px;
+    background: var(--bg-tertiary);
+    border-top: 1px solid var(--border-color);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.orchids-account-card .usage-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 6px 0;
-    font-size: 13px;
+    margin-bottom: 8px;
 }
 
-.orchids-detail-item:not(:last-child) {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-}
-
-.orchids-detail-label {
-    color: var(--text-muted);
+.orchids-account-card .usage-label {
     font-size: 12px;
-}
-
-.orchids-detail-value {
-    color: var(--text-primary);
+    color: var(--text-muted);
     font-weight: 500;
-    font-size: 13px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 160px;
-    text-align: right;
 }
 
-.orchids-detail-value.success { color: var(--accent-success); }
-.orchids-detail-value.error { color: var(--accent-danger); }
+.orchids-account-card .usage-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.orchids-account-card .usage-progress {
+    height: 6px;
+    background: var(--bg-elevated);
+    border-radius: 3px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.orchids-account-card .usage-progress-bar {
+    height: 100%;
+    background: linear-gradient(90deg, #8b5cf6 0%, #ec4899 100%);
+    border-radius: 3px;
+    transition: width 0.3s ease;
+}
+
+.orchids-account-card .usage-progress-bar.warning {
+    background: linear-gradient(90deg, #f59e0b 0%, #ef4444 100%);
+}
+
+.orchids-account-card .usage-progress-bar.danger {
+    background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
+}
+
+.orchids-account-card .usage-details {
+    display: flex;
+    justify-content: space-between;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.orchids-account-card .card-footer {
+    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.orchids-account-card .card-dates {
+    display: flex;
+    gap: 12px;
+}
+
+.orchids-account-card .date-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--text-muted);
+}
+
+.orchids-account-card .date-item svg {
+    width: 14px;
+    height: 14px;
+}
+
+.orchids-account-card .card-actions {
+    display: flex;
+    gap: 6px;
+}
+
+.orchids-account-card .card-action-btn {
+    width: 30px;
+    height: 30px;
+    border: none;
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.orchids-account-card .card-action-btn:hover {
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+}
+
+.orchids-account-card .card-action-btn.danger:hover {
+    background: rgba(239, 68, 68, 0.15);
+    color: var(--accent-danger);
+}
+
+.orchids-account-card .card-action-btn svg {
+    width: 14px;
+    height: 14px;
+}
 
 /* List View */
 .orchids-list {
@@ -820,11 +1096,23 @@
     .orchids-stats { 
         grid-template-columns: repeat(4, 1fr); 
     }
+    
+    .usage-cards {
+        grid-template-columns: 1fr 1fr 1fr;
+    }
 }
 
 @media (max-width: 1100px) {
     .orchids-stats { 
         grid-template-columns: repeat(2, 1fr); 
+    }
+    
+    .usage-cards {
+        grid-template-columns: 1fr;
+    }
+    
+    .usage-card-total {
+        order: -1;
     }
     
     .header-right {

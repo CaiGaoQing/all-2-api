@@ -982,7 +982,7 @@ AMf-vBxw...
             }
             
             try {
-                const res = await fetch(`/warp/api/quota?credentialId=${id}`);
+                const res = await fetch(`/w/api/quota?credentialId=${id}`);
                 const data = await res.json();
                 
                 if (data.success) {
@@ -1037,7 +1037,7 @@ AMf-vBxw...
             });
             
             try {
-                const res = await fetch('/warp/api/quotas');
+                const res = await fetch('/w/api/quotas');
                 const data = await res.json();
                 
                 if (data.success) {

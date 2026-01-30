@@ -10,7 +10,8 @@ const OrchidsState = {
     isLoading: false,
     healthStatus: {}, // 账号健康状态: { accountId: boolean }
     registerTaskId: null,
-    registerEventSource: null
+    registerEventSource: null,
+    usageData: null // 用量数据
 };
 
 // DOM Elements
@@ -26,16 +27,6 @@ const DOM = {
     batchImportModal: null,
     detailModal: null,
     registerModal: null,
-
-    // Stats
-    statTotal: null,
-    statValid: null,
-    statExpiring: null,
-    statError: null,
-    statHealthy: null,
-    statRequestCount: null,
-    statSuccessCount: null,
-    statFailureCount: null,
 
     // Form Elements
     searchInput: null
@@ -75,15 +66,6 @@ function initDOMReferences() {
     DOM.detailModal = document.getElementById('detail-modal');
     DOM.registerModal = document.getElementById('register-modal');
 
-    DOM.statTotal = document.getElementById('stat-total');
-    DOM.statValid = document.getElementById('stat-valid');
-    DOM.statExpiring = document.getElementById('stat-expiring');
-    DOM.statError = document.getElementById('stat-error');
-    DOM.statHealthy = document.getElementById('stat-healthy');
-    DOM.statRequestCount = document.getElementById('stat-request-count');
-    DOM.statSuccessCount = document.getElementById('stat-success-count');
-    DOM.statFailureCount = document.getElementById('stat-failure-count');
-
     DOM.searchInput = document.getElementById('search-input');
 }
 
@@ -105,6 +87,7 @@ function setupEventListeners() {
     document.getElementById('refresh-all-btn')?.addEventListener('click', handleRefreshAll);
     document.getElementById('export-btn')?.addEventListener('click', handleExport);
     document.getElementById('auto-register-btn')?.addEventListener('click', openRegisterModal);
+    document.getElementById('refresh-usage-btn')?.addEventListener('click', handleRefreshUsage);
 
     // Search
     DOM.searchInput?.addEventListener('input', (e) => {
@@ -197,8 +180,9 @@ async function loadCredentials() {
         // 兼容不同的返回格式
         OrchidsState.credentials = Array.isArray(data) ? data : (data.data || []);
         
+        // 并行加载用量数据和健康状态
+        await Promise.all([loadUsageData(), fetchHealthStatus()]);
         renderCredentials();
-        updateStats();
     } catch (error) {
         showToast(error.message, 'error');
     } finally {
@@ -243,35 +227,75 @@ function createCardHTML(cred) {
     const isHealthy = OrchidsState.healthStatus[cred.id] !== false;
     const statusClass = !cred.isActive ? 'disabled' : (isHealthy ? 'healthy' : 'error');
     const statusText = !cred.isActive ? '已禁用' : (isHealthy ? '正常' : '异常');
-    const statusDot = isHealthy ? '🟢' : '🔴';
+    
+    // 获取用量数据
+    const usageInfo = OrchidsState.usageData?.accounts?.find(a => a.id === cred.id);
+    const usage = usageInfo?.usage || { used: 0, limit: 150000, percentage: 0 };
+    const usagePercent = usage.percentage || 0;
+    const progressClass = usagePercent >= 90 ? 'danger' : (usagePercent >= 70 ? 'warning' : '');
+    
+    // 截断邮箱显示
+    const email = cred.email || cred.name || 'Unknown';
+    const displayEmail = email.length > 28 ? email.substring(0, 25) + '...' : email;
 
     return `
-        <div class="orchids-card ${statusClass}" onclick="openDetailModal(${cred.id})">
-            <div class="orchids-card-header">
-                <div class="orchids-name" title="${escapeHtml(cred.name)}">${escapeHtml(cred.name)}</div>
-                <div class="orchids-status ${statusClass}">${statusText}</div>
+        <div class="account-card orchids-account-card ${statusClass}" data-id="${cred.id}" onclick="openDetailModal(${cred.id})">
+            <div class="card-status">
+                <span class="status-badge ${statusClass}">${statusText}</span>
             </div>
-            <div class="orchids-card-body">
-                        <div class="orchids-detail-item">
-                    <span class="orchids-detail-label">邮箱</span>
-                    <span class="orchids-detail-value" title="${escapeHtml(cred.email)}">${escapeHtml(cred.email || '-')}</span>
-                        </div>
-                    <div class="orchids-detail-item">
-                        <span class="orchids-detail-label">过期时间</span>
-                    <span class="orchids-detail-value">${formatDate(cred.expiresAt)}</span>
+            <div class="card-header">
+                <div class="card-info">
+                    <div class="card-email" title="${escapeHtml(email)}">
+                        <span>${escapeHtml(displayEmail)}</span>
                     </div>
-                        <div class="orchids-detail-item">
-                    <span class="orchids-detail-label">权重</span>
-                    <span class="orchids-detail-value">${cred.weight || 1}</span>
-                        </div>
-                    <div class="orchids-detail-item">
-                    <span class="orchids-detail-label">请求数</span>
-                    <span class="orchids-detail-value">${cred.requestCount || 0}</span>
+                    <div class="card-meta">
+                        <span>Free</span>
+                        <span class="card-meta-divider"></span>
+                        <span>权重: ${cred.weight || 1}</span>
                     </div>
-                <div class="orchids-detail-item">
-                    <span class="orchids-detail-label">成功/失败</span>
-                    <span class="orchids-detail-value success">${cred.successCount || 0}</span>
-                    <span class="orchids-detail-value error">/${cred.failureCount || 0}</span>
+                </div>
+            </div>
+            <div class="card-usage">
+                <div class="usage-header">
+                    <span class="usage-label">Credits</span>
+                    <span class="usage-value">${formatCredits(usage.used)} / ${formatCredits(usage.limit)}</span>
+                </div>
+                <div class="usage-progress">
+                    <div class="usage-progress-bar ${progressClass}" style="width: ${usagePercent}%"></div>
+                </div>
+                <div class="usage-details">
+                    <span class="usage-used">已用 ${usagePercent}%</span>
+                    <span class="usage-remaining">剩余 ${formatCredits(usage.remaining || (usage.limit - usage.used))}</span>
+                </div>
+            </div>
+            <div class="card-footer">
+                <div class="card-dates">
+                    <div class="date-item">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"/>
+                            <polyline points="12 6 12 12 16 14"/>
+                        </svg>
+                        <span class="date-value">${formatDate(cred.expiresAt)}</span>
+                    </div>
+                </div>
+                <div class="card-actions">
+                    <button class="card-action-btn" data-action="chat" title="对话" onclick="event.stopPropagation(); openChat(${cred.id})">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                        </svg>
+                    </button>
+                    <button class="card-action-btn" data-action="test" title="测试" onclick="event.stopPropagation(); testAccount(${cred.id})">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                            <polyline points="22 4 12 14.01 9 11.01"/>
+                        </svg>
+                    </button>
+                    <button class="card-action-btn danger" data-action="delete" title="删除" onclick="event.stopPropagation(); deleteAccount(${cred.id})">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                        </svg>
+                    </button>
                 </div>
             </div>
         </div>
@@ -279,8 +303,51 @@ function createCardHTML(cred) {
 }
 
 function createListItemHTML(cred) {
-    // Similar to card but row layout - simplified for now
     return createCardHTML(cred); 
+}
+
+// 辅助函数：打开对话
+function openChat(id) {
+    window.location.href = `/pages/chat.html?type=orchids&id=${id}`;
+}
+
+// 辅助函数：测试账号
+async function testAccount(id) {
+    showToast('正在测试账号...', 'info');
+    try {
+        const res = await fetch(`/api/orchids/credentials/${id}/test`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+        });
+        const data = await res.json();
+        if (data.valid) {
+            showToast('账号测试通过', 'success');
+        } else {
+            showToast('账号测试失败: ' + (data.error || '未知错误'), 'error');
+        }
+        await loadCredentials();
+    } catch (e) {
+        showToast('测试失败: ' + e.message, 'error');
+    }
+}
+
+// 辅助函数：删除账号
+async function deleteAccount(id) {
+    const cred = OrchidsState.credentials.find(c => c.id === id);
+    if (!cred) return;
+    if (!confirm(`确定要删除账号 "${cred.name}" 吗？`)) return;
+
+    try {
+        await fetch(`/api/orchids/credentials/${id}`, {
+            method: 'DELETE',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+        });
+        showToast('删除成功', 'success');
+        await loadCredentials();
+        await loadUsageData();
+    } catch (error) {
+        showToast(error.message, 'error');
+    }
 }
 
 // Modal Functions
@@ -485,41 +552,150 @@ function handleExport() {
     window.location.href = `/api/orchids/export?token=${localStorage.getItem('authToken')}`;
 }
 
-// Stats
-async function updateStats() {
-    const list = OrchidsState.credentials;
-    const total = list.length;
-    const valid = list.filter(c => c.isActive).length;
-    const now = new Date();
-    const expiring = list.filter(c => c.expiresAt && (new Date(c.expiresAt) - now) < (1000 * 60 * 60 * 24 * 3)).length;
-    
-    // Fetch real health status
-    let healthData = { accounts: [] };
+// Usage Data
+async function loadUsageData() {
+    try {
+        const response = await fetch('/api/orchids/usage', {
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
+        });
+
+        if (!response.ok) throw new Error('加载用量失败');
+
+        const result = await response.json();
+        if (result.success) {
+            OrchidsState.usageData = result.data;
+            updateUsageDisplay();
+        }
+    } catch (error) {
+        console.error('加载用量数据失败:', error);
+    }
+}
+
+function updateUsageDisplay() {
+    const data = OrchidsState.usageData;
+    if (!data || !data.summary) return;
+
+    const { totalUsed, totalLimit, totalRemaining, totalPercentage, activeAccounts } = data.summary;
+
+    // 更新显示
+    const totalLimitEl = document.getElementById('usage-total-limit');
+    const totalUsedEl = document.getElementById('usage-total-used');
+    const totalRemainingEl = document.getElementById('usage-total-remaining');
+    const usedDisplayEl = document.getElementById('usage-used-display');
+    const remainingDisplayEl = document.getElementById('usage-remaining-display');
+    const percentageEl = document.getElementById('usage-percentage');
+    const progressBarEl = document.getElementById('usage-total-bar');
+    const accountsCountEl = document.getElementById('usage-accounts-count');
+
+    if (totalLimitEl) totalLimitEl.textContent = formatCredits(totalLimit);
+    if (totalUsedEl) totalUsedEl.textContent = formatCredits(totalUsed);
+    if (totalRemainingEl) totalRemainingEl.textContent = formatCredits(totalRemaining);
+    if (usedDisplayEl) usedDisplayEl.textContent = formatCredits(totalUsed);
+    if (remainingDisplayEl) remainingDisplayEl.textContent = formatCredits(totalRemaining);
+    if (percentageEl) {
+        percentageEl.textContent = `${totalPercentage}%`;
+        percentageEl.className = 'usage-percentage' + 
+            (totalPercentage >= 90 ? ' danger' : (totalPercentage >= 70 ? ' warning' : ''));
+    }
+    if (progressBarEl) {
+        progressBarEl.style.width = `${Math.min(totalPercentage, 100)}%`;
+        progressBarEl.className = 'usage-progress-bar' + 
+            (totalPercentage >= 90 ? ' danger' : (totalPercentage >= 70 ? ' warning' : ''));
+    }
+    if (accountsCountEl) accountsCountEl.textContent = activeAccounts || 0;
+}
+
+function formatCredits(num) {
+    if (num === undefined || num === null || isNaN(num)) return '--';
+    if (num >= 1000000) {
+        return (num / 1000000).toFixed(1) + 'M';
+    } else if (num >= 1000) {
+        return (num / 1000).toFixed(1) + 'K';
+    }
+    return num.toString();
+}
+
+async function handleRefreshUsage() {
+    const btn = document.getElementById('refresh-usage-btn');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = `
+            <svg class="btn-icon spinning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+            </svg>
+            刷新中...
+        `;
+    }
+
+    try {
+        // 使用 SSE 流式刷新
+        const eventSource = new EventSource('/api/orchids/usage/refresh/stream');
+        
+        eventSource.onmessage = async (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                
+                if (data.type === 'progress') {
+                    // 实时更新显示
+                    const progressText = `${data.current}/${data.total}`;
+                    if (btn) btn.innerHTML = `
+                        <svg class="btn-icon spinning" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                        </svg>
+                        ${progressText}
+                    `;
+                } else if (data.type === 'complete') {
+                    eventSource.close();
+                    showToast(`用量刷新完成：成功 ${data.success}，失败 ${data.failed}`, 'success');
+                    await loadUsageData();
+                    resetRefreshButton();
+                } else if (data.type === 'error') {
+                    eventSource.close();
+                    showToast('刷新失败: ' + data.error, 'error');
+                    resetRefreshButton();
+                }
+            } catch (e) {
+                console.error('解析 SSE 消息失败:', e);
+            }
+        };
+
+        eventSource.onerror = () => {
+            eventSource.close();
+            resetRefreshButton();
+        };
+
+    } catch (error) {
+        showToast('刷新用量失败: ' + error.message, 'error');
+        resetRefreshButton();
+    }
+
+    function resetRefreshButton() {
+        if (btn) {
+            btn.disabled = false;
+            btn.innerHTML = `
+                <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                </svg>
+                刷新用量
+            `;
+        }
+    }
+}
+
+// 获取健康状态（用于卡片渲染）
+async function fetchHealthStatus() {
     try {
         const res = await fetch('/api/orchids/credentials/health', {
             headers: { 'Authorization': `Bearer ${localStorage.getItem('authToken')}` }
         });
-        if (res.ok) healthData = await res.json();
-    } catch (e) { console.error(e); }
-    
-    OrchidsState.healthStatus = {};
-    healthData.accounts.forEach(h => OrchidsState.healthStatus[h.account_id] = h.is_healthy);
-    
-    const healthy = list.filter(c => OrchidsState.healthStatus[c.id] === true).length;
-    const error = list.filter(c => OrchidsState.healthStatus[c.id] === false || c.errorCount > 0).length;
-    
-    const req = list.reduce((s, c) => s + (c.requestCount || 0), 0);
-    const succ = list.reduce((s, c) => s + (c.successCount || 0), 0);
-    const fail = list.reduce((s, c) => s + (c.failureCount || 0), 0);
-    
-    if (DOM.statTotal) DOM.statTotal.textContent = total;
-    if (DOM.statValid) DOM.statValid.textContent = valid;
-    if (DOM.statExpiring) DOM.statExpiring.textContent = expiring;
-    if (DOM.statError) DOM.statError.textContent = error;
-    if (DOM.statHealthy) DOM.statHealthy.textContent = healthy;
-    if (DOM.statRequestCount) DOM.statRequestCount.textContent = req;
-    if (DOM.statSuccessCount) DOM.statSuccessCount.textContent = succ;
-    if (DOM.statFailureCount) DOM.statFailureCount.textContent = fail;
+        if (res.ok) {
+            const healthData = await res.json();
+            OrchidsState.healthStatus = {};
+            healthData.accounts?.forEach(h => OrchidsState.healthStatus[h.account_id] = h.is_healthy);
+        }
+    } catch (e) { 
+        console.error('获取健康状态失败:', e); 
+    }
 }
 
 // Utils

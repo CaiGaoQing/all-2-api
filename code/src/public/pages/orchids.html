@@ -69,108 +69,80 @@
                 </div>
             </header>
 
-            <!-- Stats Cards -->
-            <div class="stats-cards orchids-stats">
-                <div class="stat-card">
-                    <div class="stat-icon orchids-gradient">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
-                            <circle cx="9" cy="7" r="4"/>
-                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
-                            <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+            <!-- Usage Stats Cards (平台配额) -->
+            <div class="usage-stats-section" id="usage-stats-section">
+                <div class="section-header">
+                    <h3 class="section-title">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="20" height="20">
+                            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>
                         </svg>
-                    </div>
-                    <div class="stat-content">
-                        <div class="stat-value" id="stat-total">0</div>
-                        <div class="stat-label">总账号数</div>
-                    </div>
+                        平台配额
+                    </h3>
+                    <button class="btn btn-sm btn-secondary" id="refresh-usage-btn" title="刷新用量">
+                        <svg class="btn-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+                        </svg>
+                        刷新用量
+                    </button>
                 </div>
-                <div class="stat-card">
-                    <div class="stat-icon success">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                            <polyline points="22 4 12 14.01 9 11.01"/>
-                        </svg>
+                <div class="usage-cards">
+                    <div class="usage-card usage-card-total">
+                        <div class="usage-card-header">
+                            <div class="usage-icon credits">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"/>
+                                    <path d="M12 6v12M8 10h8M8 14h8"/>
+                                </svg>
+                            </div>
+                            <div class="usage-info">
+                                <div class="usage-label">总配额</div>
+                                <div class="usage-value" id="usage-total-limit">--</div>
+                            </div>
+                        </div>
+                        <div class="usage-progress-wrapper">
+                            <div class="usage-progress">
+                                <div class="usage-progress-bar" id="usage-total-bar" style="width: 0%"></div>
+                            </div>
+                            <div class="usage-progress-text">
+                                <span>已用: <strong id="usage-total-used">--</strong></span>
+                                <span>剩余: <strong id="usage-total-remaining">--</strong></span>
+                            </div>
+                        </div>
                     </div>
-                    <div class="stat-content">
-                        <div class="stat-value" id="stat-valid">0</div>
-                        <div class="stat-label">有效账号</div>
+                    <div class="usage-card">
+                        <div class="usage-card-header">
+                            <div class="usage-icon used">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                                </svg>
+                            </div>
+                            <div class="usage-info">
+                                <div class="usage-label">已使用</div>
+                                <div class="usage-value" id="usage-used-display">--</div>
+                            </div>
+                        </div>
+                        <div class="usage-percentage" id="usage-percentage">0%</div>
                     </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon warning">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/>
-                            <polyline points="12 6 12 12 16 14"/>
-                        </svg>
-                    </div>
-                    <div class="stat-content">
-                        <div class="stat-value" id="stat-expiring">0</div>
-                        <div class="stat-label">即将过期</div>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon error">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/>
-                            <line x1="15" y1="9" x2="9" y2="15"/>
-                            <line x1="9" y1="9" x2="15" y2="15"/>
-                        </svg>
-                    </div>
-                    <div class="stat-content">
-                        <div class="stat-value" id="stat-error">0</div>
-                        <div class="stat-label">异常账号</div>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon primary">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                            <polyline points="22 4 12 14.01 9 11.01"/>
-                        </svg>
-                    </div>
-                    <div class="stat-content">
-                        <div class="stat-value" id="stat-healthy">0</div>
-                        <div class="stat-label">激活账号</div>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon primary">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                        </svg>
-                    </div>
-                    <div class="stat-content">
-                        <div class="stat-value" id="stat-request-count">0</div>
-                        <div class="stat-label">总请求数</div>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon success">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
-                            <polyline points="22 4 12 14.01 9 11.01"/>
-                        </svg>
-                    </div>
-                    <div class="stat-content">
-                        <div class="stat-value" id="stat-success-count">0</div>
-                        <div class="stat-label">成功请求</div>
-                    </div>
-                </div>
-                <div class="stat-card">
-                    <div class="stat-icon error">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <circle cx="12" cy="12" r="10"/>
-                            <line x1="15" y1="9" x2="9" y2="15"/>
-                            <line x1="9" y1="9" x2="15" y2="15"/>
-                        </svg>
-                    </div>
-                    <div class="stat-content">
-                        <div class="stat-value" id="stat-failure-count">0</div>
-                        <div class="stat-label">失败请求</div>
+                    <div class="usage-card">
+                        <div class="usage-card-header">
+                            <div class="usage-icon remaining">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                                    <polyline points="22 4 12 14.01 9 11.01"/>
+                                </svg>
+                            </div>
+                            <div class="usage-info">
+                                <div class="usage-label">剩余配额</div>
+                                <div class="usage-value" id="usage-remaining-display">--</div>
+                            </div>
+                        </div>
+                        <div class="usage-accounts-info">
+                            <span id="usage-accounts-count">0</span> 个活跃账号
+                        </div>
                     </div>
                 </div>
             </div>
+
 
             <!-- Content Area -->
             <div class="content-area" id="orchids-page">

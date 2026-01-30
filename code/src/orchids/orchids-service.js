@@ -21,6 +21,16 @@ export const ORCHIDS_CONSTANTS = {
     ORIGIN: 'https://www.orchids.app',
     DEFAULT_TIMEOUT: 30000,
     DEFAULT_PROJECT_ID: '280b7bae-cd29-41e4-a0a6-7f603c43b607',
+    // Orchids API 服务器地址
+    ORCHIDS_API_BASE: 'https://orchids-server.calmstone-6964e08a.westeurope.azurecontainerapps.io',
+    // 套餐配额映射 (credits/月)
+    PLAN_QUOTAS: {
+        'free': 150000,
+        'pro': 2000000,
+        'premium': 4000000,
+        'ultra': 12000000,
+        'max': 30000000
+    }
 };
 
 /**
@@ -344,6 +354,246 @@ export class OrchidsAPI {
      */
     static async refreshAccountInfo(clientJwt) {
         return await this.getFullAccountInfo(clientJwt);
+    }
+
+    /**
+     * 获取账号用量信息（从 Clerk 用户 metadata 和 Orchids API 获取）
+     * @param {string} clientJwt - Clerk client JWT token
+     * @returns {Promise<Object>} {success, usage: {used, limit, remaining, plan, resetDate, percentage}, error}
+     */
+    static async getAccountUsage(clientJwt) {
+        if (!clientJwt) {
+            return { success: false, error: '缺少 clientJwt' };
+        }
+
+        log.info('获取 Orchids 账号用量信息');
+
+        try {
+            const proxyConfig = getAxiosProxyConfig();
+            
+            // 首先从 Clerk API 获取用户信息（可能包含 metadata）
+            const clerkResponse = await axios.get(ORCHIDS_CONSTANTS.CLERK_CLIENT_URL_V2, {
+                headers: {
+                    'Cookie': `__client=${clientJwt}`,
+                    'Origin': ORCHIDS_CONSTANTS.ORIGIN,
+                    'User-Agent': ORCHIDS_CONSTANTS.USER_AGENT,
+                    'Accept-Language': 'zh-CN',
+                },
+                timeout: ORCHIDS_CONSTANTS.DEFAULT_TIMEOUT,
+                ...proxyConfig
+            });
+
+            if (clerkResponse.status !== 200) {
+                return { success: false, error: `Clerk API 返回 ${clerkResponse.status}` };
+            }
+
+            const clerkData = clerkResponse.data;
+            const responseData = clerkData.response || {};
+            const sessions = responseData.sessions || [];
+
+            if (sessions.length === 0) {
+                return { success: false, error: '未找到活跃的 session' };
+            }
+
+            const session = sessions[0];
+            const user = session.user || {};
+            const wsToken = session.last_active_token?.jwt;
+            
+            // 尝试从 user metadata 获取用量信息
+            const publicMetadata = user.public_metadata || {};
+            const privateMetadata = user.private_metadata || {};
+            const unsafeMetadata = user.unsafe_metadata || {};
+            
+            // Orchids 可能在 metadata 中存储用量信息
+            let usageData = null;
+            
+            // 检查各种可能的 metadata 位置
+            if (publicMetadata.usage || publicMetadata.credits) {
+                usageData = publicMetadata.usage || publicMetadata;
+            } else if (privateMetadata.usage || privateMetadata.credits) {
+                usageData = privateMetadata.usage || privateMetadata;
+            } else if (unsafeMetadata.usage || unsafeMetadata.credits) {
+                usageData = unsafeMetadata.usage || unsafeMetadata;
+            }
+
+            // 尝试从 Orchids API 获取用量
+            if (!usageData) {
+                try {
+                    usageData = await this._getUsageFromOrchidsAPI(clientJwt, wsToken);
+                } catch (e) {
+                    log.warn(`从 Orchids API 获取用量失败: ${e.message}`);
+                }
+            }
+
+            // 如果仍然没有用量数据，尝试从用户套餐推断
+            const plan = publicMetadata.plan || privateMetadata.plan || 
+                         unsafeMetadata.plan || user.plan || 'free';
+            const planQuota = ORCHIDS_CONSTANTS.PLAN_QUOTAS[plan.toLowerCase()] || 
+                             ORCHIDS_CONSTANTS.PLAN_QUOTAS['free'];
+
+            if (usageData && (usageData.used !== undefined || usageData.credits_used !== undefined)) {
+                const used = usageData.used || usageData.credits_used || 0;
+                const limit = usageData.limit || usageData.credits_limit || planQuota;
+                const remaining = Math.max(0, limit - used);
+                const percentage = Math.round((used / limit) * 100);
+                
+                // 计算重置日期（通常是下个月1号）
+                const now = new Date();
+                const resetDate = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+
+                log.success(`获取用量成功: ${used}/${limit} (${percentage}%)`);
+
+                return {
+                    success: true,
+                    usage: {
+                        used,
+                        limit,
+                        remaining,
+                        plan: plan.charAt(0).toUpperCase() + plan.slice(1),
+                        resetDate: resetDate.toISOString(),
+                        percentage,
+                        source: 'api'
+                    }
+                };
+            }
+
+            // 如果没有具体用量数据，返回套餐默认值
+            log.info(`未获取到具体用量，使用套餐默认值: ${plan}`);
+            
+            return {
+                success: true,
+                usage: {
+                    used: 0,
+                    limit: planQuota,
+                    remaining: planQuota,
+                    plan: plan.charAt(0).toUpperCase() + plan.slice(1),
+                    resetDate: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 1).toISOString(),
+                    percentage: 0,
+                    source: 'estimated'
+                }
+            };
+
+        } catch (error) {
+            const errorMsg = error.response?.data?.message || error.message;
+            log.fail(`获取用量信息失败: ${errorMsg}`, error.response?.status);
+            return {
+                success: false,
+                error: errorMsg,
+                statusCode: error.response?.status
+            };
+        }
+    }
+
+    /**
+     * 从 Orchids API 获取用量信息
+     * @private
+     * @param {string} clientJwt - Clerk client JWT token
+     * @param {string} wsToken - WebSocket/API token
+     * @returns {Promise<Object|null>} 用量数据
+     */
+    static async _getUsageFromOrchidsAPI(clientJwt, wsToken) {
+        const proxyConfig = getAxiosProxyConfig();
+        
+        // 尝试多个可能的用量 API 端点
+        const possibleEndpoints = [
+            `${ORCHIDS_CONSTANTS.ORCHIDS_API_BASE}/api/usage`,
+            `${ORCHIDS_CONSTANTS.ORCHIDS_API_BASE}/api/user/usage`,
+            `${ORCHIDS_CONSTANTS.ORCHIDS_API_BASE}/api/credits`,
+            `${ORCHIDS_CONSTANTS.ORCHIDS_API_BASE}/api/billing/usage`,
+            'https://www.orchids.app/api/usage',
+            'https://www.orchids.app/api/user/credits',
+        ];
+
+        const headers = {
+            'Cookie': `__client=${clientJwt}`,
+            'Origin': ORCHIDS_CONSTANTS.ORIGIN,
+            'User-Agent': ORCHIDS_CONSTANTS.USER_AGENT,
+            'Accept': 'application/json',
+        };
+
+        if (wsToken) {
+            headers['Authorization'] = `Bearer ${wsToken}`;
+        }
+
+        for (const endpoint of possibleEndpoints) {
+            try {
+                const response = await axios.get(endpoint, {
+                    headers,
+                    timeout: 10000,
+                    ...proxyConfig
+                });
+
+                if (response.status === 200 && response.data) {
+                    const data = response.data;
+                    // 检查响应是否包含用量信息
+                    if (data.used !== undefined || data.credits_used !== undefined ||
+                        data.usage !== undefined || data.credits !== undefined) {
+                        log.success(`从 ${endpoint} 获取到用量数据`);
+                        return data.usage || data;
+                    }
+                }
+            } catch (e) {
+                // 继续尝试下一个端点
+                continue;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * 批量获取所有账号的用量信息
+     * @param {Array} credentials - 凭证数组 [{id, clientJwt}]
+     * @returns {Promise<Object>} {accounts: [{id, usage}], totalUsed, totalLimit}
+     */
+    static async batchGetUsage(credentials) {
+        const results = {
+            accounts: [],
+            totalUsed: 0,
+            totalLimit: 0,
+            successCount: 0,
+            failCount: 0
+        };
+
+        for (const cred of credentials) {
+            try {
+                const usageResult = await this.getAccountUsage(cred.clientJwt);
+                if (usageResult.success) {
+                    results.accounts.push({
+                        id: cred.id,
+                        name: cred.name,
+                        email: cred.email,
+                        usage: usageResult.usage
+                    });
+                    results.totalUsed += usageResult.usage.used;
+                    results.totalLimit += usageResult.usage.limit;
+                    results.successCount++;
+                } else {
+                    results.accounts.push({
+                        id: cred.id,
+                        name: cred.name,
+                        email: cred.email,
+                        usage: null,
+                        error: usageResult.error
+                    });
+                    results.failCount++;
+                }
+            } catch (error) {
+                results.accounts.push({
+                    id: cred.id,
+                    name: cred.name,
+                    email: cred.email,
+                    usage: null,
+                    error: error.message
+                });
+                results.failCount++;
+            }
+            
+            // 添加小延迟避免请求过快
+            await new Promise(resolve => setTimeout(resolve, 200));
+        }
+
+        return results;
     }
 }
 

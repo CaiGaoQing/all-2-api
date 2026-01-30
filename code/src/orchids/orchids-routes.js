@@ -137,6 +137,231 @@ export function setupOrchidsRoutes(app, orchidsStore) {
         }
     });
 
+    // ============ 用量信息 API ============
+
+    // 获取单个账号的用量信息
+    app.get('/api/orchids/credentials/:id/usage', async (req, res) => {
+        try {
+            const id = parseInt(req.params.id);
+            const credential = await orchidsStore.getById(id);
+            
+            if (!credential) {
+                return res.status(404).json({ success: false, error: '凭证不存在' });
+            }
+
+            const usageResult = await OrchidsAPI.getAccountUsage(credential.clientJwt);
+            
+            if (usageResult.success) {
+                // 更新数据库中的用量信息
+                await orchidsStore.updateUsage(id, usageResult.usage);
+                
+                res.json({
+                    success: true,
+                    data: {
+                        id: credential.id,
+                        name: credential.name,
+                        email: credential.email,
+                        usage: usageResult.usage
+                    }
+                });
+            } else {
+                res.json({
+                    success: false,
+                    error: usageResult.error,
+                    data: {
+                        id: credential.id,
+                        name: credential.name,
+                        usage: credential.usageData || null
+                    }
+                });
+            }
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // 获取所有账号的用量信息汇总
+    app.get('/api/orchids/usage', async (req, res) => {
+        try {
+            const credentials = await orchidsStore.getAll();
+            
+            // 默认配额（Free 套餐 150K credits/月）
+            const DEFAULT_QUOTA = 150000;
+            
+            // 为每个账号计算用量（如果没有 usageData，使用默认配额）
+            const accountsWithUsage = credentials.map(cred => {
+                // 如果有缓存的用量数据，使用它
+                if (cred.usageData && cred.usageData.limit) {
+                    return {
+                        id: cred.id,
+                        name: cred.name,
+                        email: cred.email,
+                        isActive: cred.isActive,
+                        usage: cred.usageData,
+                        usageUpdatedAt: cred.usageUpdatedAt
+                    };
+                }
+                
+                // 否则，使用默认免费套餐配额
+                // 估算已用量：可以基于本地请求统计来估算
+                // 假设每次请求平均消耗 500 credits
+                const estimatedUsed = (cred.requestCount || 0) * 500;
+                const remaining = Math.max(0, DEFAULT_QUOTA - estimatedUsed);
+                
+                return {
+                    id: cred.id,
+                    name: cred.name,
+                    email: cred.email,
+                    isActive: cred.isActive,
+                    usage: {
+                        used: estimatedUsed,
+                        limit: DEFAULT_QUOTA,
+                        remaining: remaining,
+                        plan: 'Free',
+                        percentage: Math.min(100, Math.round((estimatedUsed / DEFAULT_QUOTA) * 100)),
+                        source: 'estimated'
+                    },
+                    usageUpdatedAt: null
+                };
+            });
+            
+            // 只统计活跃账号
+            const activeAccounts = accountsWithUsage.filter(a => a.isActive);
+            
+            const usageData = {
+                accounts: accountsWithUsage,
+                summary: {
+                    totalAccounts: credentials.length,
+                    activeAccounts: activeAccounts.length,
+                    accountsWithUsage: credentials.filter(c => c.usageData && c.usageData.limit).length,
+                    totalUsed: activeAccounts.reduce((sum, a) => sum + (a.usage?.used || 0), 0),
+                    totalLimit: activeAccounts.reduce((sum, a) => sum + (a.usage?.limit || 0), 0)
+                }
+            };
+
+            // 计算总剩余
+            usageData.summary.totalRemaining = Math.max(0, usageData.summary.totalLimit - usageData.summary.totalUsed);
+            usageData.summary.totalPercentage = usageData.summary.totalLimit > 0 
+                ? Math.round((usageData.summary.totalUsed / usageData.summary.totalLimit) * 100) 
+                : 0;
+
+            res.json({ success: true, data: usageData });
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // 刷新所有账号的用量信息
+    app.post('/api/orchids/usage/refresh', async (req, res) => {
+        try {
+            const credentials = await orchidsStore.getAll();
+            
+            res.json({ 
+                success: true, 
+                message: `正在刷新 ${credentials.length} 个账号的用量信息...`,
+                total: credentials.length
+            });
+
+            // 异步执行刷新
+            (async () => {
+                for (const cred of credentials) {
+                    try {
+                        const usageResult = await OrchidsAPI.getAccountUsage(cred.clientJwt);
+                        if (usageResult.success) {
+                            await orchidsStore.updateUsage(cred.id, usageResult.usage);
+                        }
+                    } catch (err) {
+                        console.error(`刷新账号 ${cred.id} 用量失败:`, err.message);
+                    }
+                    // 延迟避免请求过快
+                    await new Promise(resolve => setTimeout(resolve, 500));
+                }
+                console.log('所有账号用量刷新完成');
+            })();
+        } catch (error) {
+            res.status(500).json({ success: false, error: error.message });
+        }
+    });
+
+    // SSE 流式刷新用量（实时反馈进度）
+    app.get('/api/orchids/usage/refresh/stream', async (req, res) => {
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.setHeader('Cache-Control', 'no-cache');
+        res.setHeader('Connection', 'keep-alive');
+        res.setHeader('X-Accel-Buffering', 'no');
+
+        try {
+            const credentials = await orchidsStore.getAll();
+            const total = credentials.length;
+            let current = 0;
+            let success = 0;
+            let failed = 0;
+
+            // 发送开始事件
+            res.write(`data: ${JSON.stringify({ type: 'start', total })}\n\n`);
+
+            for (const cred of credentials) {
+                current++;
+                try {
+                    const usageResult = await OrchidsAPI.getAccountUsage(cred.clientJwt);
+                    if (usageResult.success) {
+                        await orchidsStore.updateUsage(cred.id, usageResult.usage);
+                        success++;
+                        res.write(`data: ${JSON.stringify({ 
+                            type: 'progress', 
+                            current, 
+                            total, 
+                            success, 
+                            failed,
+                            account: {
+                                id: cred.id,
+                                name: cred.name,
+                                usage: usageResult.usage
+                            }
+                        })}\n\n`);
+                    } else {
+                        failed++;
+                        res.write(`data: ${JSON.stringify({ 
+                            type: 'progress', 
+                            current, 
+                            total, 
+                            success, 
+                            failed,
+                            account: {
+                                id: cred.id,
+                                name: cred.name,
+                                error: usageResult.error
+                            }
+                        })}\n\n`);
+                    }
+                } catch (err) {
+                    failed++;
+                    res.write(`data: ${JSON.stringify({ 
+                        type: 'progress', 
+                        current, 
+                        total, 
+                        success, 
+                        failed,
+                        account: {
+                            id: cred.id,
+                            name: cred.name,
+                            error: err.message
+                        }
+                    })}\n\n`);
+                }
+                // 延迟避免请求过快
+                await new Promise(resolve => setTimeout(resolve, 300));
+            }
+
+            // 发送完成事件
+            res.write(`data: ${JSON.stringify({ type: 'complete', total, success, failed })}\n\n`);
+            res.end();
+        } catch (error) {
+            res.write(`data: ${JSON.stringify({ type: 'error', error: error.message })}\n\n`);
+            res.end();
+        }
+    });
+
     // 强制刷新负载均衡器缓存
     app.post('/api/orchids/loadbalancer/refresh', async (req, res) => {
         try {
