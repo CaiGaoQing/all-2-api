@@ -12,6 +12,12 @@ export const KIRO_CONSTANTS = {
     AMAZON_Q_URL: 'https://codewhisperer.{{region}}.amazonaws.com/SendMessageStreaming',
     USAGE_LIMITS_URL: 'https://codewhisperer.{{region}}.amazonaws.com/getUsageLimits',
     LIST_MODELS_URL: 'https://codewhisperer.{{region}}.amazonaws.com/ListAvailableModels',
+    
+    // MCP 端点（用于 WebSearch 工具列表）
+    MCP_URL: 'https://q.{{region}}.amazonaws.com/mcp',
+    
+    // Q Agent 端点（用于 WebSearch 对话）
+    Q_AGENT_URL: 'https://q.{{region}}.amazonaws.com/generateAssistantResponse',
 
     // 默认配置
     DEFAULT_MODEL_NAME: 'claude-sonnet-4-20250514',

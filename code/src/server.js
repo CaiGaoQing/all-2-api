@@ -8,6 +8,7 @@ import { KiroClient } from './kiro/client.js';
 import { KiroService } from './kiro/kiro-service.js';
 import { KiroAPI } from './kiro/api.js';
 import { KiroAuth } from './kiro/auth.js';
+import { WebSearchService } from './kiro/websearch-service.js';
 import { OrchidsAPI } from './orchids/orchids-service.js';
 import { OrchidsChatService, ORCHIDS_MODELS } from './orchids/orchids-chat-service.js';
 import { setupOrchidsRoutes } from './orchids/orchids-routes.js';
@@ -3615,6 +3616,119 @@ app.post('/api/credentials/:id/refresh', async (req, res) => {
         res.status(500).json({
             success: false,
             error: `Token 刷新失败: ${error.message}`
+        });
+    }
+});
+
+// ============ WebSearch API ============
+
+// 获取 WebSearch 可用工具列表
+app.get('/api/credentials/:id/websearch/tools', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const credential = await store.getById(id);
+
+        if (!credential) {
+            return res.status(404).json({ success: false, error: '凭据不存在' });
+        }
+
+        const webSearchService = new WebSearchService(credential);
+        const result = await webSearchService.listTools();
+
+        if (!result.success) {
+            return res.status(500).json({
+                success: false,
+                error: result.error
+            });
+        }
+
+        res.json({
+            success: true,
+            data: result.tools
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: `获取 WebSearch 工具列表失败: ${error.message}`
+        });
+    }
+});
+
+// 执行 Web 搜索
+app.post('/api/credentials/:id/websearch', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const { query } = req.body;
+
+        if (!query) {
+            return res.status(400).json({ success: false, error: '搜索查询不能为空' });
+        }
+
+        const credential = await store.getById(id);
+
+        if (!credential) {
+            return res.status(404).json({ success: false, error: '凭据不存在' });
+        }
+
+        const webSearchService = new WebSearchService(credential);
+        const result = await webSearchService.search(query);
+
+        if (!result.success) {
+            return res.status(500).json({
+                success: false,
+                error: result.error
+            });
+        }
+
+        res.json({
+            success: true,
+            data: {
+                query: result.query,
+                results: result.results
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: `Web 搜索失败: ${error.message}`
+        });
+    }
+});
+
+// 通用 MCP 工具调用
+app.post('/api/credentials/:id/mcp/call', async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const { tool, args } = req.body;
+
+        if (!tool) {
+            return res.status(400).json({ success: false, error: '工具名称不能为空' });
+        }
+
+        const credential = await store.getById(id);
+
+        if (!credential) {
+            return res.status(404).json({ success: false, error: '凭据不存在' });
+        }
+
+        const webSearchService = new WebSearchService(credential);
+        const result = await webSearchService.callTool(tool, args || {});
+
+        if (!result.success) {
+            return res.status(500).json({
+                success: false,
+                error: result.error
+            });
+        }
+
+        res.json({
+            success: true,
+            data: result.result
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: `MCP 工具调用失败: ${error.message}`
         });
     }
 });

@@ -6,6 +6,7 @@
 export { KiroClient } from './kiro/client.js';
 export { KiroAuth } from './kiro/auth.js';
 export { KiroAPI } from './kiro/api.js';
+export { WebSearchService, createWebSearchService } from './kiro/websearch-service.js';
 export { KIRO_CONSTANTS, KIRO_MODELS, MODEL_MAPPING, KIRO_OAUTH_CONFIG } from './constants.js';
 
 // Vertex AI 支持
