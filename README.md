@@ -151,10 +151,12 @@ docker-compose -f docker-compose.external-db.yml up -d
 
 ### 交流群
 
-![3478087c6020b0dd08e3225ad6449625](https://github.com/user-attachments/assets/543e9320-e460-46f8-a0b5-83edf7188a41)
 
+![ba4727e62d27bb8fe24719bf7ae43a6d](https://github.com/user-attachments/assets/48a3e1a0-85f1-4d8d-837a-183aac0d1c7e)
 
 ---
+### 联系群主
+![030584c322cd8683fad1ddcc43051550](https://github.com/user-attachments/assets/708841bb-41f8-4e27-9e1a-e9a4a8ed0c00)
 
 ### 界面截图
 
