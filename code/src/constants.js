@@ -67,8 +67,12 @@ CRITICAL: Follow these rules to avoid "Error writing file" errors:
 3. Include 3-5 lines of context before and after the change point to ensure uniqueness
 4. Make small, focused changes - one edit at a time
 5. If edit fails, re-read the file and try again with the exact content
-6. For large file writes, split content into chunks of max 3KB each and write sequentially
-7. Never write more than 3000 characters in a single Write tool call
+
+Large file handling (超过 20KB 的文件):
+- For large file writes (>20KB), split content into multiple Write calls, each under 15KB
+- Write the file in sequential chunks: first chunk creates the file, subsequent chunks append
+- For large edits, break into multiple smaller Edit calls, each modifying a specific section
+- Prefer multiple small edits over one large edit
 
 Common errors:
 - "not found": old_string doesn't match - re-read file first
