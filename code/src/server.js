@@ -37,6 +37,7 @@ import { setupAmiRoutes } from './ami/ami-routes.js';
 import { setupCodexRoutes } from './codex/codex-routes.js';
 import { CodexCredentialStore } from './db.js';
 import { CodexService, CODEX_MODELS } from './codex/codex-service.js';
+import { createFlowRoutes } from './flow/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -5102,7 +5103,7 @@ const DEFAULT_ADMIN = {
 // 启动服务器
 async function start() {
     // 初始化数据库
-    await initDatabase();
+    const pool = await initDatabase();
     store = await CredentialStore.create();
     userStore = await UserStore.create();
     apiKeyStore = await ApiKeyStore.create();
@@ -5191,6 +5192,12 @@ async function start() {
     setupCodexRoutes(app, authMiddleware, verifyApiKey, apiLogStore);
     console.log(`[${getTimestamp()}] Codex 服务已启动`);
 
+    // 设置 Flow 路由 (VideoFX/Veo)
+    const flowRoutes = createFlowRoutes(pool);
+    app.use('/flow', flowRoutes);
+    app.use('/api/flow', flowRoutes);
+    console.log(`[${getTimestamp()}] Flow 服务已启动`);
+
     // 启动定时刷新任务
     startCredentialsRefreshTask();
     startErrorCredentialsRefreshTask();
@@ -5209,6 +5216,7 @@ async function start() {
         console.log('[API]   Warp 格式:    /w/v1/messages');
         console.log('[API]   Vertex 格式:  /vertex/v1/messages');
         console.log('[API]   Bedrock 格式: /api/bedrock/chat');
+        console.log('[API]   Flow 格式:    /flow/v1/chat/completions');
         console.log('[API]   模型列表:     /v1/models');
     });
 }

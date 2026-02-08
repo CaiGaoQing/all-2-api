@@ -8,12 +8,12 @@ let searchQuery = '';
 let contextMenuTarget = null;
 
 // DOM 元素
-let cardsGrid, emptyState, addModal, batchImportModal, contextMenu, searchInput;
+let accountsTbody, emptyState, addModal, batchImportModal, contextMenu, searchInput;
 
 // 初始化
 document.addEventListener('DOMContentLoaded', async () => {
     // 获取 DOM 元素
-    cardsGrid = document.getElementById('cards-grid');
+    accountsTbody = document.getElementById('accounts-tbody');
     emptyState = document.getElementById('empty-state');
     addModal = document.getElementById('add-modal');
     batchImportModal = document.getElementById('batch-import-modal');
@@ -74,7 +74,7 @@ function setupEventListeners() {
     // 搜索
     searchInput.addEventListener('input', (e) => {
         searchQuery = e.target.value.toLowerCase();
-        renderCards();
+        renderTable();
     });
 
     // 键盘快捷键
@@ -96,7 +96,7 @@ function setupEventListeners() {
             document.querySelectorAll('.header-tab').forEach(t => t.classList.remove('active'));
             tab.classList.add('active');
             currentFilter = tab.dataset.filter;
-            renderCards();
+            renderTable();
         });
     });
 
@@ -108,7 +108,24 @@ function setupEventListeners() {
         } else {
             selectedIds.clear();
         }
-        renderCards();
+        // 同步表格全选
+        const tableSelectAll = document.getElementById('table-select-all');
+        if (tableSelectAll) tableSelectAll.checked = e.target.checked;
+        renderTable();
+        updateBatchDeleteBtn();
+    });
+
+    // 表格全选
+    document.getElementById('table-select-all')?.addEventListener('change', (e) => {
+        const filtered = getFilteredCredentials();
+        if (e.target.checked) {
+            filtered.forEach(c => selectedIds.add(c.id));
+        } else {
+            selectedIds.clear();
+        }
+        // 同步头部全选
+        document.getElementById('select-all').checked = e.target.checked;
+        renderTable();
         updateBatchDeleteBtn();
     });
 
@@ -140,7 +157,7 @@ async function loadCredentials() {
         const result = await res.json();
         credentials = Array.isArray(result) ? result : (result.data || []);
         updateCounts();
-        renderCards();
+        renderTable();
     } catch (err) {
         console.error('Load credentials error:', err);
         showToast('加载账号失败', 'error');
@@ -185,9 +202,9 @@ async function batchRefreshUsage() {
 
 // 刷新单个账户额度
 async function refreshSingleUsage(id) {
-    const card = document.querySelector('.account-card[data-id="' + id + '"]');
-    const usageValue = card?.querySelector('.usage-value');
-    if (usageValue) usageValue.textContent = '加载中...';
+    const row = document.querySelector('tr[data-id="' + id + '"]');
+    const usageCell = row?.querySelector('.usage-cell');
+    if (usageCell) usageCell.innerHTML = '<span style="color: var(--text-muted);">加载中...</span>';
 
     try {
         const res = await fetch('/api/credentials/' + id + '/usage', {
@@ -201,7 +218,7 @@ async function refreshSingleUsage(id) {
                 cred.usageData = result.data;
             }
             showToast('额度刷新成功', 'success');
-            renderCards();
+            renderTable();
         } else {
             showToast('额度刷新失败: ' + (result.error || '获取失败'), 'error');
             // 刷新失败可能账户已被移到异常表，重新加载列表
@@ -449,43 +466,42 @@ function getFilteredCredentials() {
     });
 }
 
-function renderCards() {
+function renderTable() {
     const filtered = getFilteredCredentials();
     document.getElementById('displayed-count').textContent = filtered.length;
+    const tableContainer = document.getElementById('accounts-table-container');
 
     if (filtered.length === 0) {
-        cardsGrid.style.display = 'none';
+        tableContainer.style.display = 'none';
         emptyState.style.display = 'block';
         return;
     }
 
-    cardsGrid.style.display = 'grid';
+    tableContainer.style.display = 'block';
     emptyState.style.display = 'none';
 
-    cardsGrid.innerHTML = filtered.map(function(cred) { return createCardHTML(cred); }).join('');
+    accountsTbody.innerHTML = filtered.map(function(cred) { return createRowHTML(cred); }).join('');
 
     // 添加事件监听器
-    cardsGrid.querySelectorAll('.account-card').forEach(function(card) {
-        const id = parseInt(card.dataset.id);
+    accountsTbody.querySelectorAll('tr[data-id]').forEach(function(row) {
+        const id = parseInt(row.dataset.id);
 
-        card.querySelector('.card-checkbox input').addEventListener('change', function(e) {
+        row.querySelector('.row-checkbox')?.addEventListener('change', function(e) {
             e.stopPropagation();
             if (e.target.checked) {
                 selectedIds.add(id);
-                card.classList.add('selected');
             } else {
                 selectedIds.delete(id);
-                card.classList.remove('selected');
             }
             updateBatchDeleteBtn();
         });
 
-        card.addEventListener('contextmenu', function(e) {
+        row.addEventListener('contextmenu', function(e) {
             e.preventDefault();
             showContextMenu(e, id);
         });
 
-        card.querySelectorAll('.card-action-btn').forEach(function(btn) {
+        row.querySelectorAll('.btn-icon-sm[data-action]').forEach(function(btn) {
             btn.addEventListener('click', function(e) {
                 e.stopPropagation();
                 contextMenuTarget = id;
@@ -493,7 +509,7 @@ function renderCards() {
             });
         });
 
-        const copyBtn = card.querySelector('.copy-btn');
+        const copyBtn = row.querySelector('.copy-btn');
         if (copyBtn) {
             copyBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
@@ -502,7 +518,7 @@ function renderCards() {
             });
         }
 
-        const refreshUsageBtn = card.querySelector('.btn-refresh-usage');
+        const refreshUsageBtn = row.querySelector('.btn-refresh-usage');
         if (refreshUsageBtn) {
             refreshUsageBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
@@ -510,7 +526,7 @@ function renderCards() {
             });
         }
 
-        const refreshTokenBtn = card.querySelector('.btn-refresh-token');
+        const refreshTokenBtn = row.querySelector('.btn-refresh-token');
         if (refreshTokenBtn) {
             refreshTokenBtn.addEventListener('click', function(e) {
                 e.stopPropagation();
@@ -520,31 +536,20 @@ function renderCards() {
     });
 }
 
-// 生成用量显示HTML
-function generateUsageHTML(usage) {
+// 生成表格用量显示HTML
+function generateTableUsageHTML(usage) {
     if (!usage) {
-        return '<div class="usage-header"><span class="usage-label">额度</span><span class="usage-value" style="color: var(--text-muted);">点击刷新</span></div>' +
-            '<div class="usage-bar"><div class="usage-bar-fill" style="width: 0%"></div></div>' +
-            '<div class="usage-details"><span class="usage-used">--</span>' +
-            '<span class="usage-remaining">' +
-            '<button class="btn-refresh-usage" style="background: none; border: none; color: var(--accent-primary); cursor: pointer; font-size: 12px; padding: 2px 6px;">刷新额度</button>' +
-            '<button class="btn-refresh-token" style="background: none; border: none; color: var(--accent-warning); cursor: pointer; font-size: 12px; padding: 2px 6px;">刷新Token</button>' +
-            '</span></div>';
+        return '<span style="color: var(--text-muted);">--</span>';
     }
 
     let usagePercent = 0;
     let usedCount = 0;
     let totalCount = 0;
-    let displayName = 'Credits';
-    let isFreeTrialActive = false;
-    let nextReset = null;
 
     if (usage.usageBreakdownList && usage.usageBreakdownList.length > 0) {
         const breakdown = usage.usageBreakdownList[0];
-        displayName = breakdown.displayNamePlural || breakdown.displayName || 'Credits';
 
         if (breakdown.freeTrialInfo && breakdown.freeTrialInfo.freeTrialStatus === 'ACTIVE') {
-            isFreeTrialActive = true;
             usedCount = breakdown.freeTrialInfo.currentUsageWithPrecision || breakdown.freeTrialInfo.currentUsage || 0;
             totalCount = breakdown.freeTrialInfo.usageLimitWithPrecision || breakdown.freeTrialInfo.usageLimit || 500;
         } else {
@@ -552,81 +557,47 @@ function generateUsageHTML(usage) {
             totalCount = breakdown.usageLimitWithPrecision || breakdown.usageLimit || 50;
         }
 
-        if (breakdown.nextDateReset) {
-            nextReset = new Date(breakdown.nextDateReset * 1000);
-        }
-
         usagePercent = totalCount > 0 ? Math.round((usedCount / totalCount) * 100) : 0;
     }
 
-    const usageClass = usagePercent > 80 ? 'danger' : usagePercent > 50 ? 'warning' : '';
-    const resetText = nextReset ? formatResetDate(nextReset) : '';
-    const trialBadge = isFreeTrialActive ? '<span style="background: var(--accent-success-bg); color: var(--accent-success); padding: 2px 6px; border-radius: 4px; font-size: 10px; margin-left: 6px;">试用中</span>' : '';
+    const usageClass = usagePercent > 80 ? 'danger' : usagePercent > 50 ? 'warning' : 'success';
+    const colorVar = usageClass === 'danger' ? 'var(--accent-danger)' : usageClass === 'warning' ? 'var(--accent-warning)' : 'var(--accent-success)';
 
-    return '<div class="usage-header">' +
-        '<span class="usage-label">' + displayName + trialBadge + '</span>' +
-        '<span class="usage-value ' + usageClass + '">' + usagePercent + '%</span>' +
+    return '<div style="display: flex; align-items: center; gap: 8px;">' +
+        '<div style="flex: 1; height: 6px; background: var(--bg-tertiary); border-radius: 3px; min-width: 60px;">' +
+        '<div style="height: 100%; width: ' + Math.min(usagePercent, 100) + '%; background: ' + colorVar + '; border-radius: 3px;"></div>' +
         '</div>' +
-        '<div class="usage-bar">' +
-        '<div class="usage-bar-fill ' + usageClass + '" style="width: ' + Math.min(usagePercent, 100) + '%"></div>' +
-        '</div>' +
-        '<div class="usage-details">' +
-        '<span class="usage-used">已用 ' + usedCount.toFixed(2) + ' / ' + totalCount + '</span>' +
-        '<span class="usage-remaining">' + (resetText ? '重置: ' + resetText : '剩余 ' + (totalCount - usedCount).toFixed(2)) + '</span>' +
+        '<span style="color: ' + colorVar + '; font-weight: 500; font-size: 12px; min-width: 36px;">' + usagePercent + '%</span>' +
         '</div>';
 }
 
-function createCardHTML(cred) {
+function createRowHTML(cred) {
     const isSelected = selectedIds.has(cred.id);
     const email = cred.email || cred.name || 'Unknown';
-    const statusClass = cred.status === 'error' ? 'error' : cred.status === 'warning' ? 'warning' : 'normal';
-    const statusText = statusClass === 'normal' ? '正常' : statusClass === 'warning' ? '警告' : '异常';
+    const statusClass = cred.status === 'error' ? 'error' : cred.status === 'warning' ? 'warning' : 'success';
+    const statusText = statusClass === 'success' ? '正常' : statusClass === 'warning' ? '警告' : '异常';
 
-    // 截断邮箱显示（保留前缀和域名）
-    const truncateEmail = function(email, maxLen) {
-        if (email.length <= maxLen) return email;
-        const atIndex = email.indexOf('@');
-        if (atIndex === -1) return email.substring(0, maxLen - 3) + '...';
-        const prefix = email.substring(0, atIndex);
-        const domain = email.substring(atIndex);
-        if (domain.length >= maxLen - 3) {
-            return prefix.substring(0, 3) + '...' + domain.substring(0, maxLen - 6);
-        }
-        const availableLen = maxLen - domain.length - 3;
-        if (availableLen <= 0) return email.substring(0, maxLen - 3) + '...';
-        return prefix.substring(0, availableLen) + '...' + domain;
-    };
-    const displayEmail = truncateEmail(email, 28);
-
-    let html = '<div class="account-card' + (isSelected ? ' selected' : '') + '" data-id="' + cred.id + '">';
-    html += '<div class="card-status">';
-    html += '<span class="status-badge ' + statusClass + '">' + statusText + '</span>';
-    html += '</div>';
-
-    html += '<div class="card-header">';
-    html += '<div class="card-checkbox"><input type="checkbox" class="checkbox-custom"' + (isSelected ? ' checked' : '') + '></div>';
-    html += '<div class="card-info">';
-    html += '<div class="card-email" title="' + email + '"><span>' + displayEmail + '</span>';
-    html += '<button class="copy-btn"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button></div>';
-    html += '<div class="card-meta"><span>' + (cred.authMethod || 'social') + '</span><span class="card-meta-divider"></span><span>' + (cred.region || 'us-east-1') + '</span></div>';
-    html += '</div></div>';
-
-    html += '<div class="card-usage">';
-    html += generateUsageHTML(cred.usageData);
-    html += '</div>';
-
-    html += '<div class="card-footer">';
-    html += '<div class="card-dates"><div class="date-item">';
-    html += '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>';
-    html += '<span class="date-value">' + formatExpireDate(cred.expiresAt) + '</span></div></div>';
-
-    html += '<div class="card-actions">';
-    html += '<button class="card-action-btn" data-action="chat" title="对话"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>';
-    html += '<button class="card-action-btn" data-action="refresh" title="刷新令牌"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>';
-    html += '<button class="card-action-btn" data-action="test" title="测试连接"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></button>';
-    html += '<button class="card-action-btn danger" data-action="delete" title="删除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
-    html += '</div></div></div>';
-
+    let html = '<tr data-id="' + cred.id + '">';
+    html += '<td><input type="checkbox" class="checkbox-custom row-checkbox"' + (isSelected ? ' checked' : '') + '></td>';
+    html += '<td><div style="display: flex; align-items: center; gap: 6px;">';
+    html += '<span style="max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="' + email + '">' + email + '</span>';
+    html += '<button class="copy-btn" style="background: none; border: none; color: var(--text-muted); cursor: pointer; padding: 2px;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>';
+    html += '</div></td>';
+    html += '<td><span style="font-size: 12px; color: var(--text-secondary);">' + (cred.authMethod || 'social') + '</span></td>';
+    const providerColor = (cred.provider || '').toLowerCase() === 'google' ? '#4285f4' : (cred.provider || '').toLowerCase() === 'github' ? '#a78bfa' : 'var(--text-secondary)';
+    html += '<td><span style="font-size: 12px; color: ' + providerColor + '; font-weight: 500;">' + (cred.provider || '--') + '</span></td>';
+    html += '<td><span style="font-size: 12px; color: var(--text-muted);">' + (cred.region || 'us-east-1') + '</span></td>';
+    html += '<td class="usage-cell">' + generateTableUsageHTML(cred.usageData) + '</td>';
+    html += '<td><span style="font-size: 12px; color: var(--text-secondary);">' + formatExpireDate(cred.expiresAt) + '</span></td>';
+    html += '<td><span class="status-badge ' + statusClass + '">' + statusText + '</span></td>';
+    html += '<td><div class="action-buttons">';
+    html += '<button class="btn-icon-sm" data-action="chat" title="对话"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></button>';
+    html += '<button class="btn-icon-sm btn-refresh-usage" title="刷新额度"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></svg></button>';
+    html += '<button class="btn-icon-sm btn-refresh-token" title="刷新Token"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg></button>';
+    html += '<button class="btn-icon-sm" data-action="test" title="测试"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg></button>';
+    html += '<button class="btn-icon-sm danger" data-action="delete" title="删除"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></button>';
+    html += '</div></td>';
+    html += '</tr>';
     return html;
 }
 

@@ -2666,3 +2666,381 @@ body {
     color: white;
     box-shadow: 0 2px 8px var(--accent-primary-glow);
 }
+
+/* ============ Flow Tokens Page Styles ============ */
+
+/* 数据表格通用样式 */
+.table-container {
+    background: var(--bg-card);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+}
+
+.data-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.data-table thead {
+    background: var(--bg-tertiary);
+}
+
+.data-table th {
+    padding: 14px 16px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border-color);
+    white-space: nowrap;
+}
+
+.data-table td {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border-color);
+    font-size: 14px;
+    color: var(--text-primary);
+    vertical-align: middle;
+}
+
+.data-table tbody tr {
+    transition: background var(--transition-fast);
+}
+
+.data-table tbody tr:hover {
+    background: var(--bg-card-hover);
+}
+
+.data-table tbody tr:last-child td {
+    border-bottom: none;
+}
+
+/* Flow Token 表格特定列宽 */
+#tokens-table th:nth-child(1),
+#tokens-table td:nth-child(1) { width: 22%; min-width: 180px; }
+#tokens-table th:nth-child(2),
+#tokens-table td:nth-child(2) { width: 8%; min-width: 70px; }
+#tokens-table th:nth-child(3),
+#tokens-table td:nth-child(3) { width: 8%; min-width: 70px; }
+#tokens-table th:nth-child(4),
+#tokens-table td:nth-child(4) { width: 9%; min-width: 80px; }
+#tokens-table th:nth-child(5),
+#tokens-table td:nth-child(5) { width: 7%; min-width: 60px; }
+#tokens-table th:nth-child(6),
+#tokens-table td:nth-child(6) { width: 7%; min-width: 60px; }
+#tokens-table th:nth-child(7),
+#tokens-table td:nth-child(7) { width: 12%; min-width: 100px; }
+#tokens-table th:nth-child(8),
+#tokens-table td:nth-child(8) { width: 12%; min-width: 100px; }
+#tokens-table th:nth-child(9),
+#tokens-table td:nth-child(9) { width: 15%; min-width: 140px; }
+
+/* Token 邮箱单元格 */
+.token-email {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.token-email strong {
+    font-weight: 600;
+    color: var(--text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.token-remark {
+    font-size: 12px;
+    color: var(--text-muted);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* 状态徽章 - 扩展 */
+.status-badge.success {
+    background: var(--accent-success-bg);
+    color: var(--accent-success);
+}
+
+.status-badge.error {
+    background: var(--accent-danger-bg);
+    color: var(--accent-danger);
+}
+
+/* 特性徽章 */
+.feature-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.feature-badge.enabled {
+    background: var(--accent-success-bg);
+    color: var(--accent-success);
+}
+
+.feature-badge.disabled {
+    background: var(--bg-tertiary);
+    color: var(--text-muted);
+}
+
+/* 项目名称 */
+.project-name {
+    display: inline-block;
+    max-width: 120px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+/* 小图标按钮 */
+.btn-icon-sm {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    border: none;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--transition-fast);
+}
+
+.btn-icon-sm svg {
+    width: 16px;
+    height: 16px;
+}
+
+.btn-icon-sm:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.btn-icon-sm.danger:hover {
+    background: var(--accent-danger-bg);
+    color: var(--accent-danger);
+}
+
+/* 按钮 hover 提示效果 */
+.btn-icon-sm[title] {
+    position: relative;
+}
+
+.btn-icon-sm:active {
+    transform: scale(0.95);
+}
+
+/* 刷新按钮旋转动画 */
+.btn-icon-sm.refreshing svg {
+    animation: spin 1s linear infinite;
+}
+
+/* 成功状态按钮 */
+.btn-icon-sm.success {
+    color: var(--accent-success);
+}
+
+.btn-icon-sm.success:hover {
+    background: var(--accent-success-bg);
+    color: var(--accent-success);
+}
+
+/* 操作按钮组 */
+.action-buttons {
+    display: flex;
+    gap: 4px;
+    justify-content: flex-start;
+}
+
+/* Header Tabs 样式优化 */
+.header-tabs {
+    display: flex;
+    gap: 4px;
+    background: var(--bg-tertiary);
+    padding: 4px;
+    border-radius: var(--radius-md);
+}
+
+.header-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 14px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.header-tab:hover {
+    color: var(--text-primary);
+    background: var(--bg-elevated);
+}
+
+.header-tab.active {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.tab-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 18px;
+    padding: 0 6px;
+    background: var(--bg-elevated);
+    border-radius: 9px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+}
+
+.header-tab.active .tab-count {
+    background: linear-gradient(135deg, var(--accent-primary), var(--accent-purple));
+    color: white;
+}
+
+/* Flow Tokens 页面响应式 */
+@media (max-width: 1200px) {
+    .table-container {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .data-table {
+        min-width: 900px;
+    }
+}
+
+@media (max-width: 768px) {
+    /* 隐藏表格，显示卡片 */
+    #tokens-page .table-container {
+        display: none;
+    }
+
+    /* Token 卡片列表 */
+    .tokens-card-list {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .token-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-lg);
+        padding: 16px;
+        transition: all var(--transition-fast);
+    }
+
+    .token-card:hover {
+        border-color: var(--border-light);
+        background: var(--bg-card-hover);
+    }
+
+    .token-card-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 12px;
+    }
+
+    .token-card-email {
+        font-size: 15px;
+        font-weight: 600;
+        color: var(--text-primary);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 200px;
+    }
+
+    .token-card-remark {
+        font-size: 12px;
+        color: var(--text-muted);
+        margin-top: 4px;
+    }
+
+    .token-card-info {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+        margin-bottom: 12px;
+        padding: 12px;
+        background: var(--bg-tertiary);
+        border-radius: var(--radius-md);
+    }
+
+    .token-card-info-item {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+    }
+
+    .token-card-info-label {
+        font-size: 11px;
+        color: var(--text-muted);
+        text-transform: uppercase;
+    }
+
+    .token-card-info-value {
+        font-size: 13px;
+        color: var(--text-secondary);
+        font-weight: 500;
+    }
+
+    .token-card-features {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+
+    .token-card-actions {
+        display: flex;
+        gap: 8px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border-color);
+    }
+
+    .token-card-actions .btn {
+        flex: 1;
+        padding: 8px 12px;
+        font-size: 12px;
+    }
+
+    /* Header 调整 */
+    .header-tabs {
+        display: none;
+    }
+
+    .header-right {
+        flex-wrap: wrap;
+        gap: 8px;
+    }
+
+    .header-right .btn {
+        flex: 1;
+        min-width: 120px;
+    }
+}
