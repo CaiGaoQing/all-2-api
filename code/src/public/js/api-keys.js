@@ -1,6 +1,8 @@
 // ============ API 密钥页面 JS ============
 
 let apiKeys = [];
+let packages = []; // 套餐列表
+let selectedPackage = null; // 当前选中的套餐
 let createKeyModal;
 let limitsModal;
 let batchCreateModal;
@@ -285,10 +287,81 @@ async function loadKeyUsage(keyId) {
     }
 }
 
-function openCreateModal() {
+async function openCreateModal() {
     document.getElementById('key-name').value = '';
     document.getElementById('custom-key').value = '';
+    document.getElementById('package-select').value = '';
+    document.getElementById('package-preview').style.display = 'none';
+    selectedPackage = null;
+    
+    // 加载套餐列表
+    await loadPackages();
+    
     createKeyModal.classList.add('active');
+}
+
+// 加载套餐列表
+async function loadPackages() {
+    try {
+        const res = await fetch('/api/packages/active', {
+            headers: { 'Authorization': 'Bearer ' + authToken }
+        });
+        const result = await res.json();
+        if (result.success) {
+            packages = result.data;
+            renderPackageSelect();
+        }
+    } catch (err) {
+        console.error('加载套餐失败:', err);
+    }
+}
+
+// 渲染套餐下拉框
+function renderPackageSelect() {
+    const select = document.getElementById('package-select');
+    select.innerHTML = '<option value="">-- 不使用套餐 --</option>';
+    
+    packages.forEach(pkg => {
+        const option = document.createElement('option');
+        option.value = pkg.id;
+        option.textContent = `${pkg.name}${pkg.price > 0 ? ` (¥${pkg.price})` : ''}`;
+        select.appendChild(option);
+    });
+    
+    // 添加选择事件
+    select.onchange = function() {
+        const pkgId = this.value;
+        if (pkgId) {
+            selectedPackage = packages.find(p => p.id === parseInt(pkgId));
+            showPackagePreview(selectedPackage);
+        } else {
+            selectedPackage = null;
+            document.getElementById('package-preview').style.display = 'none';
+        }
+    };
+}
+
+// 显示套餐预览
+function showPackagePreview(pkg) {
+    const preview = document.getElementById('package-preview');
+    const content = preview.querySelector('.package-preview-content');
+    
+    const items = [];
+    if (pkg.expiresInDays > 0) items.push(`<div class="package-preview-item"><span class="package-preview-label">有效期</span><span class="package-preview-value">${pkg.expiresInDays} 天</span></div>`);
+    if (pkg.dailyLimit > 0) items.push(`<div class="package-preview-item"><span class="package-preview-label">每日请求</span><span class="package-preview-value">${pkg.dailyLimit}</span></div>`);
+    if (pkg.monthlyLimit > 0) items.push(`<div class="package-preview-item"><span class="package-preview-label">每月请求</span><span class="package-preview-value">${pkg.monthlyLimit}</span></div>`);
+    if (pkg.totalLimit > 0) items.push(`<div class="package-preview-item"><span class="package-preview-label">总请求数</span><span class="package-preview-value">${pkg.totalLimit}</span></div>`);
+    if (pkg.concurrentLimit > 0) items.push(`<div class="package-preview-item"><span class="package-preview-label">并发限制</span><span class="package-preview-value">${pkg.concurrentLimit}</span></div>`);
+    if (pkg.dailyCostLimit > 0) items.push(`<div class="package-preview-item"><span class="package-preview-label">日费用限制</span><span class="package-preview-value">¥${pkg.dailyCostLimit}</span></div>`);
+    if (pkg.monthlyCostLimit > 0) items.push(`<div class="package-preview-item"><span class="package-preview-label">月费用限制</span><span class="package-preview-value">¥${pkg.monthlyCostLimit}</span></div>`);
+    if (pkg.totalCostLimit > 0) items.push(`<div class="package-preview-item"><span class="package-preview-label">总费用限制</span><span class="package-preview-value">¥${pkg.totalCostLimit}</span></div>`);
+    
+    if (items.length === 0) {
+        items.push(`<div class="package-preview-item"><span class="package-preview-label">无限制</span><span class="package-preview-value">-</span></div>`);
+    }
+    
+    content.innerHTML = items.join('');
+    preview.style.display = 'block';
 }
 
 function closeCreateModal() {
@@ -305,6 +378,7 @@ async function createApiKey() {
     }
 
     try {
+        // 创建密钥
         const res = await fetch('/api/keys', {
             method: 'POST',
             headers: {
@@ -316,9 +390,17 @@ async function createApiKey() {
 
         const result = await res.json();
         if (result.success) {
+            const keyId = result.data.id;
+            const keyValue = result.data.key;
+            
+            // 如果选择了套餐，应用套餐限制
+            if (selectedPackage && keyId) {
+                await applyPackageToKey(keyId, selectedPackage);
+            }
+            
             showToast('API 密钥创建成功', 'success');
-            if (result.data.key) {
-                alert('请保存您的 API 密钥（只显示一次）:\n\n' + result.data.key);
+            if (keyValue) {
+                alert('请保存您的 API 密钥（只显示一次）:\n\n' + keyValue);
             }
             closeCreateModal();
             loadApiKeys();
@@ -327,6 +409,32 @@ async function createApiKey() {
         }
     } catch (err) {
         showToast('创建失败: ' + err.message, 'error');
+    }
+}
+
+// 应用套餐配置到密钥
+async function applyPackageToKey(keyId, pkg) {
+    try {
+        await fetch(`/api/keys/${keyId}/limits`, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': 'Bearer ' + authToken
+            },
+            body: JSON.stringify({
+                dailyLimit: pkg.dailyLimit,
+                monthlyLimit: pkg.monthlyLimit,
+                totalLimit: pkg.totalLimit,
+                concurrentLimit: pkg.concurrentLimit,
+                rateLimit: pkg.rateLimit,
+                dailyCostLimit: pkg.dailyCostLimit,
+                monthlyCostLimit: pkg.monthlyCostLimit,
+                totalCostLimit: pkg.totalCostLimit,
+                expiresInDays: pkg.expiresInDays
+            })
+        });
+    } catch (err) {
+        console.error('应用套餐配置失败:', err);
     }
 }
 

@@ -4,7 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
 import crypto from 'crypto';
-import { CredentialStore, UserStore, ApiKeyStore, ApiLogStore, GeminiCredentialStore, OrchidsCredentialStore, WarpCredentialStore, TrialApplicationStore, SiteSettingsStore, VertexCredentialStore, BedrockCredentialStore, ModelPricingStore, AmiCredentialStore, initDatabase } from './db.js';
+import { CredentialStore, UserStore, ApiKeyStore, ApiLogStore, GeminiCredentialStore, OrchidsCredentialStore, WarpCredentialStore, TrialApplicationStore, SiteSettingsStore, VertexCredentialStore, BedrockCredentialStore, ModelPricingStore, AmiCredentialStore, PackageStore, initDatabase } from './db.js';
 import { KiroClient } from './kiro/client.js';
 import { KiroService } from './kiro/kiro-service.js';
 import { KiroAPI } from './kiro/api.js';
@@ -957,6 +957,153 @@ app.put('/api/site-settings', authMiddleware, async (req, res) => {
         });
 
         res.json({ success: true, data: settings });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// ============ 套餐管理 API ============
+
+// 获取所有套餐
+app.get('/api/packages', authMiddleware, async (req, res) => {
+    try {
+        const includeInactive = req.query.includeInactive === 'true';
+        const store = await PackageStore.create();
+        const packages = await store.getAll(includeInactive);
+        res.json({ success: true, data: packages });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 获取活跃套餐列表（用于下拉选择）
+app.get('/api/packages/active', authMiddleware, async (req, res) => {
+    try {
+        const store = await PackageStore.create();
+        const packages = await store.getAll(false);
+        res.json({ success: true, data: packages });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 获取单个套餐
+app.get('/api/packages/:id', authMiddleware, async (req, res) => {
+    try {
+        const store = await PackageStore.create();
+        const pkg = await store.getById(parseInt(req.params.id));
+        if (!pkg) {
+            return res.status(404).json({ success: false, error: '套餐不存在' });
+        }
+        res.json({ success: true, data: pkg });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 创建套餐
+app.post('/api/packages', authMiddleware, async (req, res) => {
+    try {
+        const { name, description, dailyLimit, monthlyLimit, totalLimit, concurrentLimit, rateLimit,
+            dailyCostLimit, monthlyCostLimit, totalCostLimit, expiresInDays, price, sortOrder } = req.body;
+
+        if (!name) {
+            return res.status(400).json({ success: false, error: '套餐名称是必填项' });
+        }
+
+        const store = await PackageStore.create();
+        const id = await store.add({
+            name, description,
+            dailyLimit: parseInt(dailyLimit) || 0,
+            monthlyLimit: parseInt(monthlyLimit) || 0,
+            totalLimit: parseInt(totalLimit) || 0,
+            concurrentLimit: parseInt(concurrentLimit) || 0,
+            rateLimit: parseInt(rateLimit) || 0,
+            dailyCostLimit: parseFloat(dailyCostLimit) || 0,
+            monthlyCostLimit: parseFloat(monthlyCostLimit) || 0,
+            totalCostLimit: parseFloat(totalCostLimit) || 0,
+            expiresInDays: parseInt(expiresInDays) || 0,
+            price: parseFloat(price) || 0,
+            sortOrder: parseInt(sortOrder) || 0
+        });
+
+        const pkg = await store.getById(id);
+        res.json({ success: true, data: pkg });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 更新套餐
+app.put('/api/packages/:id', authMiddleware, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const store = await PackageStore.create();
+
+        const existing = await store.getById(id);
+        if (!existing) {
+            return res.status(404).json({ success: false, error: '套餐不存在' });
+        }
+
+        const updates = {};
+        const { name, description, dailyLimit, monthlyLimit, totalLimit, concurrentLimit, rateLimit,
+            dailyCostLimit, monthlyCostLimit, totalCostLimit, expiresInDays, price, sortOrder, isActive } = req.body;
+
+        if (name !== undefined) updates.name = name;
+        if (description !== undefined) updates.description = description;
+        if (dailyLimit !== undefined) updates.dailyLimit = parseInt(dailyLimit) || 0;
+        if (monthlyLimit !== undefined) updates.monthlyLimit = parseInt(monthlyLimit) || 0;
+        if (totalLimit !== undefined) updates.totalLimit = parseInt(totalLimit) || 0;
+        if (concurrentLimit !== undefined) updates.concurrentLimit = parseInt(concurrentLimit) || 0;
+        if (rateLimit !== undefined) updates.rateLimit = parseInt(rateLimit) || 0;
+        if (dailyCostLimit !== undefined) updates.dailyCostLimit = parseFloat(dailyCostLimit) || 0;
+        if (monthlyCostLimit !== undefined) updates.monthlyCostLimit = parseFloat(monthlyCostLimit) || 0;
+        if (totalCostLimit !== undefined) updates.totalCostLimit = parseFloat(totalCostLimit) || 0;
+        if (expiresInDays !== undefined) updates.expiresInDays = parseInt(expiresInDays) || 0;
+        if (price !== undefined) updates.price = parseFloat(price) || 0;
+        if (sortOrder !== undefined) updates.sortOrder = parseInt(sortOrder) || 0;
+        if (isActive !== undefined) updates.isActive = isActive;
+
+        await store.update(id, updates);
+        const pkg = await store.getById(id);
+        res.json({ success: true, data: pkg });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 删除套餐
+app.delete('/api/packages/:id', authMiddleware, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const store = await PackageStore.create();
+
+        const existing = await store.getById(id);
+        if (!existing) {
+            return res.status(404).json({ success: false, error: '套餐不存在' });
+        }
+
+        await store.delete(id);
+        res.json({ success: true, data: { message: '删除成功' } });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+// 切换套餐状态
+app.post('/api/packages/:id/toggle', authMiddleware, async (req, res) => {
+    try {
+        const id = parseInt(req.params.id);
+        const store = await PackageStore.create();
+
+        const existing = await store.getById(id);
+        if (!existing) {
+            return res.status(404).json({ success: false, error: '套餐不存在' });
+        }
+
+        await store.toggleActive(id);
+        const pkg = await store.getById(id);
+        res.json({ success: true, data: pkg });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }

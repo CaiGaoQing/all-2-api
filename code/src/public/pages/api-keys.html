@@ -9,6 +9,56 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/css/common.css">
     <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        .package-preview {
+            background: var(--bg-secondary, #f8f9fa);
+            border: 1px solid var(--border-color, #e5e7eb);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+        }
+        .package-preview-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+        }
+        .package-preview-content {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 8px;
+            font-size: 13px;
+        }
+        .package-preview-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 8px;
+            background: var(--bg-primary, #fff);
+            border-radius: 4px;
+        }
+        .package-preview-label {
+            color: var(--text-secondary);
+        }
+        .package-preview-value {
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+        .form-select {
+            width: 100%;
+            padding: 10px 12px;
+            font-size: 14px;
+            border: 1px solid var(--border-color, #e5e7eb);
+            border-radius: 8px;
+            background: var(--bg-primary, #fff);
+            color: var(--text-primary);
+            cursor: pointer;
+        }
+        .form-select:focus {
+            outline: none;
+            border-color: var(--primary-color, #10a37f);
+            box-shadow: 0 0 0 3px rgba(16, 163, 127, 0.1);
+        }
+    </style>
 </head>
 <body>
     <div class="app-container">
@@ -109,6 +159,17 @@
                 <div class="form-group">
                     <label class="form-label">密钥名称 <span class="required">*</span></label>
                     <input type="text" class="form-input" id="key-name" placeholder="例如: 生产环境密钥">
+                </div>
+                <div class="form-group">
+                    <label class="form-label">选择套餐</label>
+                    <select class="form-select" id="package-select">
+                        <option value="">-- 不使用套餐 --</option>
+                    </select>
+                    <p class="form-hint">选择套餐后将自动应用套餐的限制配置</p>
+                </div>
+                <div id="package-preview" class="package-preview" style="display: none;">
+                    <div class="package-preview-title">套餐配置预览</div>
+                    <div class="package-preview-content"></div>
                 </div>
                 <div class="form-group">
                     <label class="form-label">自定义密钥 (可选)</label>

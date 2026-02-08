@@ -344,6 +344,31 @@ export async function initDatabase() {
         // 忽略错误
     }
 
+    // 创建套餐管理表
+    await pool.execute(`
+        CREATE TABLE IF NOT EXISTS packages (
+            id INT PRIMARY KEY AUTO_INCREMENT,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            daily_limit INT DEFAULT 0,
+            monthly_limit INT DEFAULT 0,
+            total_limit INT DEFAULT 0,
+            concurrent_limit INT DEFAULT 0,
+            rate_limit INT DEFAULT 0,
+            daily_cost_limit DECIMAL(10,2) DEFAULT 0,
+            monthly_cost_limit DECIMAL(10,2) DEFAULT 0,
+            total_cost_limit DECIMAL(10,2) DEFAULT 0,
+            expires_in_days INT DEFAULT 0,
+            price DECIMAL(10,2) DEFAULT 0,
+            sort_order INT DEFAULT 0,
+            is_active TINYINT DEFAULT 1,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            INDEX idx_is_active (is_active),
+            INDEX idx_sort_order (sort_order)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
+    `);
+
     // 创建站点设置表
     await pool.execute(`
         CREATE TABLE IF NOT EXISTS site_settings (
@@ -2701,6 +2726,119 @@ export class WarpRequestStatsStore {
             status: row.status,
             errorMessage: row.error_message,
             createdAt: row.created_at
+        };
+    }
+}
+
+/**
+ * 套餐管理类
+ */
+export class PackageStore {
+    constructor(database) {
+        this.db = database;
+    }
+
+    static async create() {
+        const database = await getDatabase();
+        return new PackageStore(database);
+    }
+
+    async add(pkg) {
+        const [result] = await this.db.execute(`
+            INSERT INTO packages (name, description, daily_limit, monthly_limit, total_limit, 
+                concurrent_limit, rate_limit, daily_cost_limit, monthly_cost_limit, total_cost_limit,
+                expires_in_days, price, sort_order, is_active)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `, [
+            pkg.name,
+            pkg.description || null,
+            pkg.dailyLimit || 0,
+            pkg.monthlyLimit || 0,
+            pkg.totalLimit || 0,
+            pkg.concurrentLimit || 0,
+            pkg.rateLimit || 0,
+            pkg.dailyCostLimit || 0,
+            pkg.monthlyCostLimit || 0,
+            pkg.totalCostLimit || 0,
+            pkg.expiresInDays || 0,
+            pkg.price || 0,
+            pkg.sortOrder || 0,
+            pkg.isActive !== false ? 1 : 0
+        ]);
+        return result.insertId;
+    }
+
+    async getById(id) {
+        const [rows] = await this.db.execute('SELECT * FROM packages WHERE id = ?', [id]);
+        if (rows.length === 0) return null;
+        return this._mapRow(rows[0]);
+    }
+
+    async getAll(includeInactive = false) {
+        let query = 'SELECT * FROM packages';
+        if (!includeInactive) {
+            query += ' WHERE is_active = 1';
+        }
+        query += ' ORDER BY sort_order ASC, id ASC';
+        const [rows] = await this.db.execute(query);
+        return rows.map(row => this._mapRow(row));
+    }
+
+    async update(id, pkg) {
+        const fields = [];
+        const values = [];
+
+        if (pkg.name !== undefined) { fields.push('name = ?'); values.push(pkg.name); }
+        if (pkg.description !== undefined) { fields.push('description = ?'); values.push(pkg.description); }
+        if (pkg.dailyLimit !== undefined) { fields.push('daily_limit = ?'); values.push(pkg.dailyLimit); }
+        if (pkg.monthlyLimit !== undefined) { fields.push('monthly_limit = ?'); values.push(pkg.monthlyLimit); }
+        if (pkg.totalLimit !== undefined) { fields.push('total_limit = ?'); values.push(pkg.totalLimit); }
+        if (pkg.concurrentLimit !== undefined) { fields.push('concurrent_limit = ?'); values.push(pkg.concurrentLimit); }
+        if (pkg.rateLimit !== undefined) { fields.push('rate_limit = ?'); values.push(pkg.rateLimit); }
+        if (pkg.dailyCostLimit !== undefined) { fields.push('daily_cost_limit = ?'); values.push(pkg.dailyCostLimit); }
+        if (pkg.monthlyCostLimit !== undefined) { fields.push('monthly_cost_limit = ?'); values.push(pkg.monthlyCostLimit); }
+        if (pkg.totalCostLimit !== undefined) { fields.push('total_cost_limit = ?'); values.push(pkg.totalCostLimit); }
+        if (pkg.expiresInDays !== undefined) { fields.push('expires_in_days = ?'); values.push(pkg.expiresInDays); }
+        if (pkg.price !== undefined) { fields.push('price = ?'); values.push(pkg.price); }
+        if (pkg.sortOrder !== undefined) { fields.push('sort_order = ?'); values.push(pkg.sortOrder); }
+        if (pkg.isActive !== undefined) { fields.push('is_active = ?'); values.push(pkg.isActive ? 1 : 0); }
+
+        if (fields.length === 0) return false;
+
+        values.push(id);
+        await this.db.execute(`UPDATE packages SET ${fields.join(', ')} WHERE id = ?`, values);
+        return true;
+    }
+
+    async delete(id) {
+        await this.db.execute('DELETE FROM packages WHERE id = ?', [id]);
+        return true;
+    }
+
+    async toggleActive(id) {
+        await this.db.execute('UPDATE packages SET is_active = NOT is_active WHERE id = ?', [id]);
+        return true;
+    }
+
+    _mapRow(row) {
+        return {
+            id: row.id,
+            name: row.name,
+            description: row.description,
+            dailyLimit: row.daily_limit || 0,
+            monthlyLimit: row.monthly_limit || 0,
+            totalLimit: row.total_limit || 0,
+            concurrentLimit: row.concurrent_limit || 0,
+            rateLimit: row.rate_limit || 0,
+            dailyCostLimit: parseFloat(row.daily_cost_limit) || 0,
+            monthlyCostLimit: parseFloat(row.monthly_cost_limit) || 0,
+            totalCostLimit: parseFloat(row.total_cost_limit) || 0,
+            expiresInDays: row.expires_in_days || 0,
+            price: parseFloat(row.price) || 0,
+            sortOrder: row.sort_order || 0,
+            isActive: row.is_active === 1,
+            createdAt: row.created_at,
+            updatedAt: row.updated_at
         };
     }
 }
