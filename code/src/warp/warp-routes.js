@@ -11,7 +11,7 @@ import { WarpProxy } from './warp-proxy.js';
 // 导入新的 protobuf 模块
 import { loadProtos, encodeRequest, decodeResponseEvent, responseEventToObject } from './warp-proto.js';
 import { buildWarpRequest, parseWarpResponseEvent, convertToClaudeSSE, buildClaudeResponse, createSSEState, createMessageStartSSE } from './warp-message-converter.js';
-import { warpToolCallToClaudeToolUse } from './warp-tool-mapper.js';
+import { warpToolCallToClaudeToolUse, stripLineNumbers, normalizeIndent, detectIndentStyle } from './warp-tool-mapper.js';
 
 // 简单的 token 估算函数（按字符数估算）
 function estimateTokens(text) {
@@ -1778,7 +1778,13 @@ export async function setupWarpRoutes(app, warpStore, warpService, apiKeyStore) 
                         console.log(`  -> calling Warp API with tool_result:`);
                         console.log(`     callId: ${warpReqOptions.toolResult.callId}`);
                         console.log(`     command: ${warpReqOptions.toolResult.command}`);
-                        console.log(`     output: "${warpReqOptions.toolResult.output.substring(0, 80)}..."`);
+                        // 打印完整的 output 以便调试错误
+                        const outputStr = warpReqOptions.toolResult.output || '';
+                        if (outputStr.includes('tool_use_error') || outputStr.includes('Error')) {
+                            console.log(`     output (FULL ERROR): "${outputStr}"`);
+                        } else {
+                            console.log(`     output: "${outputStr.substring(0, 80)}..."`);
+                        }
                         console.log(`     query: "${query.substring(0, 100)}..."`);
                     } else {
                         console.log(`  -> calling Warp API (query len=${query.length})...`);
@@ -1792,14 +1798,12 @@ export async function setupWarpRoutes(app, warpStore, warpService, apiKeyStore) 
                     let toolCalls = warpResponse.toolCalls || [];
                     const text = warpResponse.text || '';
                     fullContent = text;
-                    
+
                     // 调试：打印实际响应内容
                     if (text) {
                         console.log(`  [SSE] sending text: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
                     }
-                    if (toolCalls.length > 0) {
-                        console.log(`  [SSE] sending ${toolCalls.length} tool_use blocks`);
-                    }
+                    // 注意：tool_use blocks 的日志移到实际发送时打印
 
                     res.write(`event: content_block_start\ndata: ${JSON.stringify({
                         type: 'content_block_start',
@@ -1821,14 +1825,64 @@ export async function setupWarpRoutes(app, warpStore, warpService, apiKeyStore) 
                     })}\n\n`);
 
                     let blockIndex = 1;
+                    let sentToolCallsCount = 0;  // 跟踪实际发送的工具调用数量
                     if (toolCalls.length > 0) {
-                        for (const tc of toolCalls) {
-                            const toolUseId = tc.callId || `toolu_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-                            
-                            // 根据工具类型选择正确的工具名称和输入格式
-                            let toolName = 'Bash';
-                            let input = { command: tc.command };
-                            
+                        // 获取客户端支持的工具列表
+                        const supportedTools = new Set();
+                        if (Array.isArray(tools)) {
+                            for (const t of tools) {
+                                if (t.name) supportedTools.add(t.name);
+                            }
+                        }
+
+                        // 调试：打印支持的工具列表
+                        if (supportedTools.size > 0) {
+                            console.log(`  [TOOLS] Client supports ${supportedTools.size} tools: ${Array.from(supportedTools).slice(0, 5).join(', ')}${supportedTools.size > 5 ? '...' : ''}`);
+                        } else {
+                            console.log(`  [TOOLS] WARNING: No tools provided by client, skipping all tool calls`);
+                            // 如果客户端没有提供工具列表，跳过所有工具调用
+                            // 这通常发生在 subagent 请求中
+                        }
+
+                        // 如果客户端没有提供工具列表，不发送任何工具调用
+                        if (supportedTools.size === 0) {
+                            // 跳过工具调用处理
+                        } else {
+                            // 使用 Map 合并相同 ID 的工具调用（处理流式增量更新）
+                            const toolCallMap = new Map();
+                            for (const tc of toolCalls) {
+                                const id = tc.id || tc.callId || `toolu_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+                                if (toolCallMap.has(id)) {
+                                    const existing = toolCallMap.get(id);
+                                    if (tc.input) {
+                                        existing.input = existing.input || {};
+                                        for (const key of Object.keys(tc.input)) {
+                                            if (tc.input[key] && tc.input[key] !== '') {
+                                                existing.input[key] = tc.input[key];
+                                            }
+                                        }
+                                    }
+                                    if (tc.name) existing.name = tc.name;
+                                } else {
+                                    toolCallMap.set(id, { ...tc, id });
+                                }
+                            }
+                            console.log(`  [TOOLS] Merged ${toolCalls.length} tool calls into ${toolCallMap.size} unique calls`);
+
+                            for (const [toolUseId, tc] of toolCallMap) {
+                            // tc 已经是合并后的工具调用
+                            let toolName = tc.name || 'Bash';
+                            let input = tc.input || {};
+
+                            // 调试：打印工具调用信息
+                            console.log(`  [TOOL DEBUG] Tool from Warp: name=${toolName}, id=${toolUseId}, input=${JSON.stringify(input).substring(0, 100)}`);
+
+                            // 检查客户端是否支持该工具
+                            if (!supportedTools.has(toolName)) {
+                                console.log(`  [TOOL SKIP] Tool "${toolName}" not in client's supported tools`);
+                                continue;
+                            }
+
                             if (tc.toolName === 'Write' || tc.command === 'create_documents') {
                                 toolName = 'Write';
 
@@ -1899,28 +1953,84 @@ export async function setupWarpRoutes(app, warpStore, warpService, apiKeyStore) 
                                     content_preview: input.content?.substring(0, 100) + '...'
                                 });
                             }
-                            
-                            // 确保只传递必要的字段，移除可能的额外字段
+
+                            // 确保只传递必要的字段，跳过参数不完整的工具调用
                             const cleanInput = {};
                             if (toolName === 'Write') {
-                                // 参数验证和修复
-                                if (!input.file_path || input.file_path === 'undefined') {
-                                    console.warn(`  [TOOL WARN] Invalid file_path: ${input.file_path}, using default`);
-                                    input.file_path = 'output.md';
-                                }
-                                if (!input.content) {
-                                    console.warn(`  [TOOL WARN] Empty content for Write tool`);
-                                    input.content = '';
+                                // 跳过参数不完整的 Write 工具调用
+                                if (!input.file_path || input.file_path === 'undefined' || !input.content) {
+                                    console.log(`  [TOOL SKIP] Write tool incomplete: file_path=${input.file_path || 'none'}, content=${input.content ? input.content.length + 'c' : 'none'}`);
+                                    continue;
                                 }
 
                                 cleanInput.file_path = input.file_path;
                                 cleanInput.content = input.content;
 
                                 console.log(`  [TOOL FINAL] Write params: file_path="${cleanInput.file_path}", content_length=${cleanInput.content.length}`);
-                            } else {
+                            } else if (toolName === 'Bash') {
+                                // 跳过没有命令的 Bash 工具调用
+                                if (!input.command) {
+                                    console.log(`  [TOOL SKIP] Bash tool has no command`);
+                                    continue;
+                                }
                                 cleanInput.command = input.command;
+                            } else if (toolName === 'Read') {
+                                // 跳过没有文件路径的 Read 工具调用
+                                if (!input.file_path) {
+                                    console.log(`  [TOOL SKIP] Read tool has no file_path`);
+                                    continue;
+                                }
+                                cleanInput.file_path = input.file_path;
+                                if (input.offset) cleanInput.offset = input.offset;
+                                if (input.limit) cleanInput.limit = input.limit;
+                            } else if (toolName === 'Edit') {
+                                // Edit 工具特殊处理：从消息历史中查找文件内容，检测缩进风格
+                                if (!input.file_path || !input.old_string) {
+                                    console.log(`  [TOOL SKIP] Edit tool incomplete: file_path=${input.file_path || 'none'}, old_string=${input.old_string ? 'yes' : 'none'}`);
+                                    continue;
+                                }
+
+                                // 从消息历史中查找对应文件的 Read 结果
+                                let targetIndent = 2; // 默认 2 空格缩进
+                                const targetFilePath = input.file_path;
+
+                                // 遍历消息查找 Read 结果
+                                for (const m of messages) {
+                                    if (m.role === 'user' && Array.isArray(m.content)) {
+                                        for (const block of m.content) {
+                                            if (block.type === 'tool_result' && block.content) {
+                                                // 检查是否是对应文件的 Read 结果
+                                                const content = block.content;
+                                                // Read 结果通常包含文件内容，检测其缩进
+                                                if (content.length > 100) {
+                                                    const detectedStyle = detectIndentStyle(content);
+                                                    if (detectedStyle.char === ' ' && detectedStyle.size > 0) {
+                                                        targetIndent = detectedStyle.size;
+                                                        console.log(`  [EDIT] Detected indent from history: ${targetIndent} spaces`);
+                                                        break;
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 规范化 old_string 和 new_string 的缩进
+                                const normalizedOldString = normalizeIndent(stripLineNumbers(input.old_string), targetIndent);
+                                const normalizedNewString = normalizeIndent(stripLineNumbers(input.new_string || ''), targetIndent);
+
+                                cleanInput.file_path = input.file_path;
+                                cleanInput.old_string = normalizedOldString;
+                                cleanInput.new_string = normalizedNewString;
+
+                                console.log(`  [EDIT] Normalized indent to ${targetIndent} spaces for ${input.file_path}`);
+                            } else {
+                                // 其他工具直接使用 input
+                                Object.assign(cleanInput, input);
                             }
-                            const inputJson = JSON.stringify(cleanInput);
+
+                            console.log(`  [SSE] sending tool_use: ${toolName} (id=${toolUseId})`);
+                            sentToolCallsCount++;  // 增加实际发送的工具调用计数
 
                             res.write(`event: content_block_start\ndata: ${JSON.stringify({
                                 type: 'content_block_start',
@@ -1931,7 +2041,7 @@ export async function setupWarpRoutes(app, warpStore, warpService, apiKeyStore) 
                             res.write(`event: content_block_delta\ndata: ${JSON.stringify({
                                 type: 'content_block_delta',
                                 index: blockIndex,
-                                delta: { type: 'input_json_delta', partial_json: inputJson }
+                                delta: { type: 'input_json_delta', partial_json: JSON.stringify(cleanInput) }
                             })}\n\n`);
 
                             res.write(`event: content_block_stop\ndata: ${JSON.stringify({
@@ -1941,10 +2051,12 @@ export async function setupWarpRoutes(app, warpStore, warpService, apiKeyStore) 
 
                             blockIndex++;
                         }
+                        } // 关闭 else { for supportedTools.size check
                     }
 
                     const outputTokens = estimateTokens(fullContent);
-                    const stopReason = toolCalls.length > 0 ? 'tool_use' : 'end_turn';
+                    // 只有当实际发送了工具调用时才返回 tool_use
+                    const stopReason = sentToolCallsCount > 0 ? 'tool_use' : 'end_turn';
 
                     res.write(`event: message_delta\ndata: ${JSON.stringify({
                         type: 'message_delta',
@@ -2039,15 +2151,39 @@ export async function setupWarpRoutes(app, warpStore, warpService, apiKeyStore) 
                 }
                 
                 // 如果有工具调用，添加 tool_use 块
+                let sentToolCallsCount = 0;  // 跟踪实际发送的工具调用数量
                 if (toolCalls.length > 0) {
-                    for (const tc of toolCalls) {
-                        const toolUseId = tc.callId || `toolu_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-                        
-                        // 根据工具类型选择正确的工具名称和输入格式
-                        let toolName = 'Bash';
-                        let input = { command: tc.command };
-                        
-                        if (tc.toolName === 'Write' || tc.command === 'create_documents') {
+                    // 获取客户端支持的工具列表
+                    const supportedTools = new Set();
+                    if (Array.isArray(tools)) {
+                        for (const t of tools) {
+                            if (t.name) supportedTools.add(t.name);
+                        }
+                    }
+
+                    // 调试：打印支持的工具列表
+                    if (supportedTools.size > 0) {
+                        console.log(`  [TOOLS] Client supports ${supportedTools.size} tools (non-stream)`);
+                    } else {
+                        console.log(`  [TOOLS] WARNING: No tools provided by client, skipping all tool calls (non-stream)`);
+                    }
+
+                    // 如果客户端没有提供工具列表，不发送任何工具调用
+                    if (supportedTools.size > 0) {
+                        for (const tc of toolCalls) {
+                            const toolUseId = tc.callId || `toolu_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+
+                            // 根据工具类型选择正确的工具名称和输入格式
+                            let toolName = 'Bash';
+                            let input = { command: tc.command };
+
+                            // 检查客户端是否支持该工具
+                            if (!supportedTools.has(toolName)) {
+                                console.log(`  [TOOL SKIP] Tool "${toolName}" not in client's supported tools (non-stream)`);
+                                continue;
+                            }
+
+                            if (tc.toolName === 'Write' || tc.command === 'create_documents') {
                             toolName = 'Write';
 
                             // 调试：打印原始工具调用信息
@@ -2135,6 +2271,34 @@ export async function setupWarpRoutes(app, warpStore, warpService, apiKeyStore) 
                             cleanInput.content = input.content;
 
                             console.log(`  [TOOL FINAL] Write params (non-stream): file_path="${cleanInput.file_path}", content_length=${cleanInput.content.length}`);
+                        } else if (toolName === 'Edit') {
+                            // Edit 工具特殊处理（非流式）
+                            if (!input.file_path || !input.old_string) {
+                                console.log(`  [TOOL SKIP] Edit tool incomplete (non-stream)`);
+                                continue;
+                            }
+
+                            // 从消息历史中检测缩进风格
+                            let targetIndent = 2;
+                            for (const m of messages) {
+                                if (m.role === 'user' && Array.isArray(m.content)) {
+                                    for (const block of m.content) {
+                                        if (block.type === 'tool_result' && block.content && block.content.length > 100) {
+                                            const detectedStyle = detectIndentStyle(block.content);
+                                            if (detectedStyle.char === ' ' && detectedStyle.size > 0) {
+                                                targetIndent = detectedStyle.size;
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+
+                            cleanInput.file_path = input.file_path;
+                            cleanInput.old_string = normalizeIndent(stripLineNumbers(input.old_string), targetIndent);
+                            cleanInput.new_string = normalizeIndent(stripLineNumbers(input.new_string || ''), targetIndent);
+
+                            console.log(`  [EDIT] Normalized indent to ${targetIndent} spaces (non-stream)`);
                         } else {
                             cleanInput.command = input.command;
                         }
@@ -2145,7 +2309,9 @@ export async function setupWarpRoutes(app, warpStore, warpService, apiKeyStore) 
                             name: toolName,
                             input: cleanInput
                         });
+                        sentToolCallsCount++;  // 增加实际发送的工具调用计数
                     }
+                    } // 关闭 if (supportedTools.size > 0)
                 }
                 
                 // 如果没有内容，添加默认提示
@@ -2157,7 +2323,8 @@ export async function setupWarpRoutes(app, warpStore, warpService, apiKeyStore) 
                 }
 
                 const outputTokens = estimateTokens(finalResponse);
-                const stopReason = toolCalls.length > 0 ? 'tool_use' : 'end_turn';
+                // 只有当实际发送了工具调用时才返回 tool_use
+                const stopReason = sentToolCallsCount > 0 ? 'tool_use' : 'end_turn';
 
                 const durationMs = Date.now() - startTime;
                 console.log(`  ✓ ${durationMs}ms | in=${inputTokens} out=${outputTokens}`);

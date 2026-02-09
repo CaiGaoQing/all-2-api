@@ -1,0 +1,236 @@
+// 从 Warp 二进制自动提取
+// 原始文件: response.proto
+// 提取时间: 2026-01-27 12:35:47
+
+syntax = "proto3";
+
+package warp.multi_agent.v1;
+
+import "google/protobuf/field_mask.proto";
+import "options.proto";
+import "suggestions.proto";
+import "task.proto";
+
+option go_package = "github.com/warp/warp-proto-apis/multi_agent/v1";
+
+enum LLMProvider {
+    LLM_PROVIDER_UNKNOWN = 0;
+    LLM_PROVIDER_ANTHROPIC = 1;
+    LLM_PROVIDER_OPENAI = 2;
+    LLM_PROVIDER_GOOGLE = 3;
+    LLM_PROVIDER_XAI = 4;
+    LLM_PROVIDER_OPENROUTER = 5;
+    LLM_PROVIDER_AWS_BEDROCK = 6;
+}
+
+message ResponseEvent {
+    message StreamInit {
+        string conversation_id = 1;
+        string request_id = 2;
+    }
+
+    message ClientActions {
+        repeated warp.multi_agent.v1.ClientAction actions = 1;
+    }
+
+    message StreamFinished {
+        message ConversationUsageMetadata {
+            message WarpTokenUsageEntry {
+                string key = 1;
+                warp.multi_agent.v1.ResponseEvent.StreamFinished.ModelTokenUsage value = 2;
+            }
+
+            message ByokTokenUsageEntry {
+                string key = 1;
+                warp.multi_agent.v1.ResponseEvent.StreamFinished.ModelTokenUsage value = 2;
+            }
+
+            float context_window_usage = 1;
+            bool summarized = 2;
+            float credits_spent = 3;
+            repeated warp.multi_agent.v1.ResponseEvent.StreamFinished.ModelTokenUsage token_usage = 4;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ToolUsageMetadata tool_usage_metadata = 5;
+            repeated warp.multi_agent.v1.ResponseEvent.StreamFinished.ConversationUsageMetadata.WarpTokenUsageEntry warp_token_usage = 6;
+            repeated warp.multi_agent.v1.ResponseEvent.StreamFinished.ConversationUsageMetadata.ByokTokenUsageEntry byok_token_usage = 7;
+        }
+
+        message ModelTokenUsage {
+            message TokenUsageByCategoryEntry {
+                string key = 1;
+                uint32 value = 2;
+            }
+
+            string model_id = 1;
+            uint32 total_tokens = 2;
+            repeated warp.multi_agent.v1.ResponseEvent.StreamFinished.ModelTokenUsage.TokenUsageByCategoryEntry token_usage_by_category = 3;
+        }
+
+        message ToolUsageMetadata {
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.RunCommandStats run_command_stats = 1;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ToolCallStats read_files_stats = 2;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ToolCallStats search_codebase_stats = 3;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ToolCallStats grep_stats = 4;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ToolCallStats file_glob_stats = 5;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ApplyFileDiffStats apply_file_diff_stats = 6;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ToolCallStats write_to_long_running_shell_command_stats = 7;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ToolCallStats read_mcp_resource_stats = 8;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ToolCallStats call_mcp_tool_stats = 9;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ToolCallStats suggest_plan_stats = 10;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ToolCallStats suggest_create_plan_stats = 11;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ToolCallStats read_shell_command_output_stats = 12;
+        }
+
+        message ToolCallStats {
+            int32 count = 1;
+        }
+
+        message ApplyFileDiffStats {
+            int32 count = 1;
+            int32 lines_added = 2;
+            int32 lines_removed = 3;
+            int32 files_changed = 4;
+        }
+
+        message RunCommandStats {
+            int32 count = 1;
+            int32 command_executed = 2;
+        }
+
+        message RequestCost {
+            float exact = 1;
+        }
+
+        message TokenUsage {
+            string model_id = 1;
+            uint32 total_input = 2;
+            uint32 output = 3;
+            uint32 input_cache_read = 4;
+            uint32 input_cache_write = 5;
+            float cost_in_cents = 6;
+        }
+
+        message Other {
+        }
+
+        message Done {
+        }
+
+        message ReachedMaxTokenLimit {
+        }
+
+        message QuotaLimit {
+        }
+
+        message ContextWindowExceeded {
+        }
+
+        message LLMUnavailable {
+        }
+
+        message InvalidApiKey {
+            warp.multi_agent.v1.LLMProvider provider = 1;
+            string model_name = 2;
+        }
+
+        message InternalError {
+            string message = 1;
+        }
+
+        repeated warp.multi_agent.v1.ResponseEvent.StreamFinished.TokenUsage token_usage = 8;
+        bool should_refresh_model_config = 9;
+        warp.multi_agent.v1.ResponseEvent.StreamFinished.RequestCost request_cost = 10;
+        warp.multi_agent.v1.ResponseEvent.StreamFinished.ConversationUsageMetadata conversation_usage_metadata = 11;
+        oneof reason {
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.Other other = 1;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.Done done = 2;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ReachedMaxTokenLimit max_token_limit = 3;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.QuotaLimit quota_limit = 4;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.ContextWindowExceeded context_window_exceeded = 5;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.LLMUnavailable llm_unavailable = 6;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.InternalError internal_error = 7;
+            warp.multi_agent.v1.ResponseEvent.StreamFinished.InvalidApiKey invalid_api_key = 12;
+        }
+    }
+
+    oneof type {
+        warp.multi_agent.v1.ResponseEvent.StreamInit init = 1;
+        warp.multi_agent.v1.ResponseEvent.ClientActions client_actions = 2;
+        warp.multi_agent.v1.ResponseEvent.StreamFinished finished = 3;
+    }
+}
+
+message ClientAction {
+    message CreateTask {
+        warp.multi_agent.v1.Task task = 1;
+    }
+
+    message UpdateTaskServerData {
+        string task_id = 1;
+        string server_data = 2;
+    }
+
+    message UpdateTaskDescription {
+        string task_id = 1;
+        string description = 2;
+    }
+
+    message AddMessagesToTask {
+        string task_id = 1;
+        repeated warp.multi_agent.v1.Message messages = 2;
+    }
+
+    message UpdateTaskMessage {
+        string task_id = 3;
+        warp.multi_agent.v1.Message message = 1;
+        google.protobuf.FieldMask mask = 2;
+    }
+
+    message AppendToMessageContent {
+        string task_id = 3;
+        warp.multi_agent.v1.Message message = 1;
+        google.protobuf.FieldMask mask = 2;
+    }
+
+    message UpdateTaskSummary {
+        string task_id = 1;
+        string summary = 2;
+    }
+
+    message BeginTransaction {
+    }
+
+    message CommitTransaction {
+    }
+
+    message RollbackTransaction {
+    }
+
+    message StartNewConversation {
+        string start_from_message_id = 1;
+    }
+
+    message MoveMessagesToNewTask {
+        string source_task_id = 1;
+        warp.multi_agent.v1.Task new_task = 2;
+        string first_message_id = 3;
+        string last_message_id = 4;
+        uint32 expected_message_count = 5;
+        repeated warp.multi_agent.v1.Message replacement_messages = 6;
+    }
+
+    oneof action {
+        warp.multi_agent.v1.ClientAction.CreateTask create_task = 1;
+        warp.multi_agent.v1.ClientAction.AddMessagesToTask add_messages_to_task = 3;
+        warp.multi_agent.v1.ClientAction.UpdateTaskMessage update_task_message = 4;
+        warp.multi_agent.v1.ClientAction.AppendToMessageContent append_to_message_content = 5;
+        warp.multi_agent.v1.Suggestions show_suggestions = 6;
+        warp.multi_agent.v1.ClientAction.UpdateTaskSummary update_task_summary = 7;
+        warp.multi_agent.v1.ClientAction.UpdateTaskDescription update_task_description = 8;
+        warp.multi_agent.v1.ClientAction.BeginTransaction begin_transaction = 9;
+        warp.multi_agent.v1.ClientAction.CommitTransaction commit_transaction = 10;
+        warp.multi_agent.v1.ClientAction.RollbackTransaction rollback_transaction = 11;
+        warp.multi_agent.v1.ClientAction.StartNewConversation start_new_conversation = 12;
+        warp.multi_agent.v1.ClientAction.UpdateTaskServerData update_task_server_data = 13;
+        warp.multi_agent.v1.ClientAction.MoveMessagesToNewTask move_messages_to_new_task = 14;
+    }
+}

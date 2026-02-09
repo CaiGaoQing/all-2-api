@@ -24,6 +24,7 @@ echo 代理地址: %PROXY_URL%
 echo.
 
 REM 设置代理环境变量
+set WARP_DEBUG=false
 set HTTP_PROXY=%PROXY_URL%
 set HTTPS_PROXY=%PROXY_URL%
 set http_proxy=%PROXY_URL%

@@ -1,0 +1,18 @@
+// 从 Warp 二进制自动提取
+// 原始文件: document_content.proto
+// 提取时间: 2026-01-27 12:35:47
+
+syntax = "proto3";
+
+package warp.multi_agent.v1;
+
+import "options.proto";
+import "file_content.proto";
+
+option go_package = "github.com/warp/warp-proto-apis/multi_agent/v1";
+
+message DocumentContent {
+    string document_id = 1;
+    string content = 2;
+    warp.multi_agent.v1.FileContentLineRange line_range = 3;
+}

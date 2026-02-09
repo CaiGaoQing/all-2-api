@@ -1,0 +1,72 @@
+// 从 Warp 二进制自动提取
+// 原始文件: input_context.proto
+// 提取时间: 2026-01-27 12:35:47
+
+syntax = "proto3";
+
+package warp.multi_agent.v1;
+
+import "google/protobuf/timestamp.proto";
+import "file_content.proto";
+import "attachment.proto";
+import "options.proto";
+
+option go_package = "github.com/warp/warp-proto-apis/multi_agent/v1";
+
+message InputContext {
+    message SelectedText {
+        string text = 1;
+    }
+
+    message Directory {
+        string pwd = 1;
+        string home = 2;
+        bool pwd_file_symbols_indexed = 3;
+    }
+
+    message Shell {
+        string name = 1;
+        string version = 2;
+    }
+
+    message OperatingSystem {
+        string platform = 1;
+        string distribution = 2;
+    }
+
+    message Image {
+        bytes data = 1;
+        string mime_type = 2;
+    }
+
+    message Codebase {
+        string name = 1;
+        string path = 2;
+    }
+
+    message File {
+        warp.multi_agent.v1.FileContent content = 1;
+    }
+
+    message ProjectRules {
+        string root_path = 1;
+        repeated warp.multi_agent.v1.FileContent active_rule_files = 2;
+        repeated string additional_rule_file_paths = 3;
+    }
+
+    message Git {
+        string head = 1;
+    }
+
+    warp.multi_agent.v1.InputContext.Directory directory = 1;
+    warp.multi_agent.v1.InputContext.OperatingSystem operating_system = 2;
+    warp.multi_agent.v1.InputContext.Shell shell = 3;
+    google.protobuf.Timestamp current_time = 4;
+    repeated warp.multi_agent.v1.InputContext.Codebase codebases = 8;
+    repeated warp.multi_agent.v1.InputContext.ProjectRules project_rules = 10;
+    warp.multi_agent.v1.InputContext.Git git = 11;
+    repeated warp.multi_agent.v1.ExecutedShellCommand executed_shell_commands = 5;
+    repeated warp.multi_agent.v1.InputContext.SelectedText selected_text = 6;
+    repeated warp.multi_agent.v1.InputContext.Image images = 7;
+    repeated warp.multi_agent.v1.InputContext.File files = 9;
+}

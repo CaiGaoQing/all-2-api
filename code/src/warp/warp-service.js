@@ -5,6 +5,11 @@
 
 import https from 'https';
 import { execSync } from 'child_process';
+import { loadProtos, decodeResponseEvent, preloadProtos } from './warp-proto.js';
+import { parseWarpResponseEvent } from './warp-message-converter.js';
+
+// 预加载 Proto（模块导入时立即开始）
+preloadProtos();
 
 // Firebase API Key
 const FIREBASE_API_KEY = 'AIzaSyBdy3O3S9hrdayLJxJ7mriBR4qgUaUygAs';
@@ -241,6 +246,64 @@ export function refreshAccessToken(refreshToken) {
     });
 }
 
+/**
+ * 高性能 SSE 行解析器
+ * 使用 Buffer 数组避免频繁字符串拼接
+ */
+class SSELineParser {
+    constructor() {
+        this.chunks = [];
+        this.totalLength = 0;
+    }
+
+    /**
+     * 添加数据块并返回完整的行
+     * @param {Buffer} chunk - 数据块
+     * @returns {string[]} 完整的行数组
+     */
+    addChunk(chunk) {
+        this.chunks.push(chunk);
+        this.totalLength += chunk.length;
+
+        // 合并所有 chunks
+        const combined = Buffer.concat(this.chunks, this.totalLength);
+        const str = combined.toString();
+
+        // 查找最后一个换行符
+        const lastNewline = str.lastIndexOf('\n');
+        if (lastNewline === -1) {
+            return [];
+        }
+
+        // 分割完整的行
+        const completeStr = str.substring(0, lastNewline);
+        const remaining = str.substring(lastNewline + 1);
+
+        // 保留剩余部分
+        if (remaining) {
+            this.chunks = [Buffer.from(remaining)];
+            this.totalLength = this.chunks[0].length;
+        } else {
+            this.chunks = [];
+            this.totalLength = 0;
+        }
+
+        return completeStr.split('\n');
+    }
+
+    /**
+     * 获取剩余数据
+     * @returns {string}
+     */
+    flush() {
+        if (this.totalLength === 0) return '';
+        const result = Buffer.concat(this.chunks, this.totalLength).toString();
+        this.chunks = [];
+        this.totalLength = 0;
+        return result;
+    }
+}
+
 // ==================== Protobuf 编码 ====================
 
 function encodeVarint(value) {
@@ -351,530 +414,44 @@ function buildRequestBody(query, model = 'claude-4.1-opus', options = {}) {
     return Buffer.concat([field1, encodeMessage(2, field2Content), encodeMessage(3, field3Content), encodeMessage(4, field4Content)]);
 }
 
-// ==================== 响应解析 ====================
-
-// 预编译正则表达式（性能优化）
-const UUID_REGEX = /^[0-9a-f-]{36}$/;
-const CHINESE_REGEX = /[\u4e00-\u9fff]/;
-const ALPHA_2_REGEX = /[a-zA-Z]{2,}/;
-const ALPHA_3_REGEX = /[a-zA-Z]{3,}/;
-const BASE64_REGEX = /^[A-Za-z0-9+/=]+$/;
-
-/**
- * 快速检查是否包含中文字符
- */
-function hasChinese(text) {
-    for (let i = 0; i < text.length; i++) {
-        const code = text.charCodeAt(i);
-        if (code >= 0x4e00 && code <= 0x9fff) return true;
-    }
-    return false;
-}
-
-/**
- * 从 protobuf 响应中提取文本内容
- * 支持 agent_output.text
- * 修复：收集所有匹配的文本片段，而不是只返回第一个
- */
-function extractAgentText(buffer) {
-    const bufferStr = buffer.toString('utf8');
-    const DEBUG = process.env.WARP_DEBUG === 'true';
-    
-    // 只处理 agent_output
-    if (!bufferStr.includes('agent_output')) {
-        return null;
-    }
-    
-    // 调试：打印 agent_output 的原始数据
-    if (DEBUG) {
-        const printable = bufferStr.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ').trim();
-        console.log(`  [AGENT_OUTPUT RAW] ${printable.substring(0, 200)}${printable.length > 200 ? '...' : ''}`);
-    }
-    
-    const texts = [];  // 收集所有文本片段
-    
-    // 使用 \x1a 嵌套解析
-    for (let i = 0; i < buffer.length - 4; i++) {
-        if (buffer[i] === 0x1a) {
-            const outerLen = buffer[i + 1];
-            if (outerLen > 2 && outerLen < 200 && buffer[i + 2] === 0x0a) {
-                const innerLen = buffer[i + 3];
-                if (innerLen > 0 && innerLen <= outerLen - 2 && i + 4 + innerLen <= buffer.length) {
-                    const text = buffer.slice(i + 4, i + 4 + innerLen).toString('utf8');
-                    
-                    // 过滤空文本和 UUID
-                    if (text.length === 0) continue;
-                    if (text.length === 36 && UUID_REGEX.test(text)) continue;
-                    
-                    // 过滤系统标识符
-                    if (text.includes('agent_') || text.includes('server_') || 
-                        text.includes('USER_') || text.includes('primary_') ||
-                        text.includes('call_') || text.includes('precmd-')) continue;
-                    
-                    // 过滤 JSON 元数据片段（如 "isNewTopic": true, "title": "xxx"）
-                    if (text.includes('isNewTopic') || text.includes('"title"') ||
-                        text.includes('"type"') || text.includes('"id"') ||
-                        /^"[a-zA-Z_]+"\s*:/.test(text.trim()) ||
-                        /^\s*\}?\s*$/.test(text) ||  // 只有 } 或空白
-                        text.trim() === 'null' || text.trim() === 'true' || text.trim() === 'false') continue;
-                    
-                    // 检查是否有可见内容（中文、英文、数字、标点等）
-                    // 放宽条件：只要有中文字符或可打印 ASCII 字符即可
-                    const hasContent = hasChinese(text) || /[a-zA-Z0-9\s\-_.,!?:;'"()\[\]{}@#$%^&*+=<>/\\|`~]/.test(text);
-                    
-                    if (hasContent) {
-                        // 排除纯 base64 长字符串（通常是 ID）
-                        if (text.length > 20 && BASE64_REGEX.test(text)) continue;
-                        texts.push(text);  // 收集而不是直接返回
-                    }
-                }
-            }
-        }
-    }
-
-    if (texts.length === 0) return null;
-    
-    const result = texts.join('');
-    
-    // 最终过滤：如果合并后的文本看起来像 JSON 元数据，则丢弃
-    // 匹配包含 isNewTopic 的任何文本（这是 Warp 的会话元数据）
-    if (/isNewTopic/i.test(result)) {
-        return null;
-    }
-    // 匹配包含 title": 的 JSON 片段（注意可能没有引号）
-    if (/title"\s*:\s*/.test(result) && result.length < 150) {
-        return null;
-    }
-    // 匹配以 } 或 }" 结尾的短 JSON 片段
-    if (/["}]\s*$/.test(result) && result.length < 100 && /^\s*"/.test(result)) {
-        return null;
-    }
-    // 匹配看起来像 JSON 键值对的短文本
-    if (/^[^a-zA-Z\u4e00-\u9fa5]*"?\w+"?\s*:\s*/.test(result) && result.length < 80) {
-        return null;
-    }
-    
-    return result;
-}
-
-/**
- * 从 protobuf 响应中提取工具调用请求
- * 支持 run_shell_command 和 create_documents 两种类型
- * 返回 { command, callId, toolName, content } 或 null
- */
-function extractToolCall(buffer) {
-    const bufferStr = buffer.toString('utf8');
-    const DEBUG = process.env.WARP_DEBUG === 'true';
-    
-    // 检查是否包含工具调用标识
-    const isShellCommand = bufferStr.includes('tool_call.run_shell_command');
-    const isCreateDocuments = bufferStr.includes('tool_call.create_documents');
-    
-    // 检查是否包含 call_ 开头的工具调用 ID（通用检测）
-    const hasCallId = /call_[A-Za-z0-9]{20,}/.test(bufferStr);
-    
-    // 如果有 call_id 但没有已知的工具类型，尝试从 buffer 中提取内容
-    if (hasCallId && !isShellCommand && !isCreateDocuments) {
-        const callIdMatch = bufferStr.match(/call_[A-Za-z0-9]+/);
-        if (callIdMatch) {
-            const callId = callIdMatch[0];
-            
-            // 方法1: 直接从 call_id 后面提取可读文本
-            const callIdIdx = bufferStr.indexOf(callId);
-            const afterCallId = bufferStr.substring(callIdIdx + callId.length);
-            
-            // 查找实际内容 - 跳过 call_id 后的控制字符和垃圾数据
-            // 寻找类似 "Create a simple HTML" 这样的有意义文本
-            let directContent = '';
-            // 匹配有意义的句子（以大写字母开头，包含空格的短语）
-            const sentenceMatch = afterCallId.match(/[A-Z][a-z]+\s+[a-z]+[\x20-\x7E\u4e00-\u9fff]*/);
-            if (sentenceMatch && sentenceMatch[0].length > 10) {
-                directContent = sentenceMatch[0];
-                if (DEBUG) {
-                    console.log(`  [TOOL_CALL] sentence match: "${directContent.substring(0, 50)}..."`);
-                }
-            }
-            
-            // 备用：提取连续的可打印字符
-            if (!directContent) {
-                const directMatch = afterCallId.match(/[\x20-\x7E\u4e00-\u9fff]+/g);
-                if (directMatch) {
-                    const filtered = directMatch.filter(s => {
-                        if (s.length < 2) return false;
-                        if (s.includes('call_')) return false;
-                        if (s.length === 36 && UUID_REGEX.test(s)) return false;
-                        if (s.length > 20 && /^[A-Za-z0-9+/=]+$/.test(s)) return false;
-                        return true;
-                    });
-                    directContent = filtered.join('');
-                    if (DEBUG && filtered.length > 0) {
-                        console.log(`  [TOOL_CALL] directMatch filtered: ${JSON.stringify(filtered.slice(0, 3))}`);
-                    }
-                }
-            }
-            
-            // 方法2: 使用 protobuf 风格解析
-            const contentTexts = [];
-            for (let i = 0; i < buffer.length - 4; i++) {
-                if (buffer[i] === 0x1a) {
-                    const outerLen = buffer[i + 1];
-                    if (outerLen > 2 && outerLen < 200 && buffer[i + 2] === 0x0a) {
-                        const innerLen = buffer[i + 3];
-                        if (innerLen > 0 && innerLen <= outerLen - 2 && i + 4 + innerLen <= buffer.length) {
-                            const text = buffer.slice(i + 4, i + 4 + innerLen).toString('utf8');
-                            if (text.length === 0) continue;
-                            if (text.length === 36 && UUID_REGEX.test(text)) continue;
-                            if (text.includes('call_') || text.includes('tool_call.')) continue;
-                            const hasContent = hasChinese(text) || /[a-zA-Z0-9#\-*<>!]/.test(text);
-                            if (hasContent) contentTexts.push(text);
-                        }
-                    }
-                }
-            }
-            const protoContent = contentTexts.join('');
-            
-            // 选择更长的内容
-            let content = directContent.length > protoContent.length ? directContent : protoContent;
-            
-            // 如果内容看起来像 Base64，尝试解码
-            if (content.length > 20 && /^[A-Za-z0-9+/=]+$/.test(content.replace(/\s/g, ''))) {
-                try {
-                    const decoded = Buffer.from(content, 'base64').toString('utf8');
-                    // 从解码后的数据中提取可读文本
-                    const readableTexts = decoded.match(/[\x20-\x7E\u4e00-\u9fff]{5,}/g);
-                    if (readableTexts) {
-                        const extractedContent = readableTexts.filter(s => 
-                            !UUID_REGEX.test(s) && 
-                            !s.includes('gpt-') &&
-                            !/^[A-Za-z0-9+/=]+$/.test(s)
-                        ).join(' ');
-                        if (extractedContent.length > 10) {
-                            content = extractedContent;
-                            if (DEBUG) {
-                                console.log(`  [TOOL_CALL] decoded Base64: "${content.substring(0, 80)}..."`);
-                            }
-                        }
-                    }
-                } catch (e) {
-                    // Base64 解码失败，保持原内容
-                }
-            }
-            
-            if (DEBUG) {
-                console.log(`  [TOOL_CALL] generic call_id: ${callId}, direct=${directContent.length}c, proto=${protoContent.length}c, final=${content.length}c`);
-            }
-            
-            // 只有当提取到内容时才返回工具调用
-            if (content.length > 0) {
-                return { 
-                    toolName: 'Write',
-                    callId, 
-                    command: 'create_documents',
-                    content: content
-                };
-            }
-        }
-        return null;
-    }
-    
-    if (!isShellCommand && !isCreateDocuments) {
-        return null;
-    }
-    
-    // 处理 create_documents 工具调用
-    if (isCreateDocuments) {
-        const callIdMatch = bufferStr.match(/call_[A-Za-z0-9]+/);
-        const callId = callIdMatch ? callIdMatch[0] : null;
-        
-        // 提取文档内容
-        let content = null;
-        const contentTexts = [];
-        
-        // 使用 \x1a 嵌套解析提取内容片段
-        for (let i = 0; i < buffer.length - 4; i++) {
-            if (buffer[i] === 0x1a) {
-                const outerLen = buffer[i + 1];
-                if (outerLen > 2 && outerLen < 200 && buffer[i + 2] === 0x0a) {
-                    const innerLen = buffer[i + 3];
-                    if (innerLen > 0 && innerLen <= outerLen - 2 && i + 4 + innerLen <= buffer.length) {
-                        const text = buffer.slice(i + 4, i + 4 + innerLen).toString('utf8');
-                        if (text.length === 0) continue;
-                        if (text.length === 36 && UUID_REGEX.test(text)) continue;
-                        if (text.includes('tool_call.') || text.includes('call_')) continue;
-                        
-                        const hasContent = hasChinese(text) || /[a-zA-Z0-9#\-*]/.test(text);
-                        if (hasContent && text.length > 0) {
-                            contentTexts.push(text);
-                        }
-                    }
-                }
-            }
-        }
-        
-        content = contentTexts.join('');
-        
-        if (DEBUG && callId) {
-            console.log(`  [TOOL_CALL] create_documents: callId=${callId}, content.length=${content?.length || 0}`);
-        }
-        
-        if (callId) {
-            return { 
-                toolName: 'Write',
-                callId, 
-                command: 'create_documents',
-                content: content || ''
-            };
-        }
-        return null;
-    }
-    
-    // 调试：打印工具调用的原始数据
-    if (DEBUG) {
-        const printable = bufferStr.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ').trim();
-        console.log(`  [TOOL_CALL RAW] ${printable.substring(0, 300)}${printable.length > 300 ? '...' : ''}`);
-    }
-    
-    // 提取 call_id
-    const callIdMatch = bufferStr.match(/call_[A-Za-z0-9]+/);
-    const callId = callIdMatch ? callIdMatch[0] : null;
-    
-    // 提取命令 - 改进的方法
-    let command = null;
-    
-    // 方法1: 查找 tool_call.run_shell_command.command 标记后的命令
-    // 命令通常在 "command" 字段之前，格式为 length-prefixed string
-    const commandMarkerIdx = bufferStr.indexOf('tool_call.run_shell_command.command');
-    if (commandMarkerIdx > 0) {
-        // 在标记之前查找命令字符串
-        // 向前搜索，找到最近的有效命令
-        for (let i = commandMarkerIdx - 1; i >= 4; i--) {
-            if (buffer[i - 1] === 0x0a) {
-                const len = buffer[i];
-                if (len >= 2 && len <= 200 && i + len <= commandMarkerIdx) {
-                    const possibleCmd = buffer.slice(i + 1, i + 1 + len).toString('utf8');
-                    // 检查是否是有效命令
-                    if (/^[a-zA-Z\/\.]/.test(possibleCmd) && 
-                        !possibleCmd.includes('tool_call') &&
-                        !possibleCmd.includes('agent_') &&
-                        !possibleCmd.includes('server_') &&
-                        !UUID_REGEX.test(possibleCmd)) {
-                        command = possibleCmd;
-                        if (DEBUG) {
-                            console.log(`  [TOOL_CALL] found command (method1): "${command}"`);
-                        }
-                        break;
-                    }
-                }
-            }
-        }
-    }
-    
-    // 方法2: 扫描所有 length-prefixed 字符串，找到看起来像命令的
-    if (!command) {
-        for (let i = 0; i < buffer.length - 3; i++) {
-            if (buffer[i] === 0x0a) {
-                const len = buffer[i + 1];
-                if (len >= 2 && len <= 200 && i + 2 + len <= buffer.length) {
-                    const possibleCmd = buffer.slice(i + 2, i + 2 + len).toString('utf8');
-                    // 检查是否是有效命令（以字母、/、. 开头）
-                    if (/^[a-zA-Z\/\.]/.test(possibleCmd) && 
-                        !possibleCmd.includes('tool_call') &&
-                        !possibleCmd.includes('agent_') &&
-                        !possibleCmd.includes('server_') &&
-                        !possibleCmd.includes('primary_') &&
-                        !UUID_REGEX.test(possibleCmd) &&
-                        !BASE64_REGEX.test(possibleCmd)) {
-                        // 检查是否包含命令特征（空格+参数，或常见命令名）
-                        const cmdName = possibleCmd.split(/\s/)[0];
-                        const commonCmds = ['ls', 'cat', 'grep', 'find', 'pwd', 'cd', 'echo', 'head', 'tail', 
-                                           'wc', 'tree', 'file', 'stat', 'du', 'df', 'mkdir', 'rm', 'cp', 
-                                           'mv', 'touch', 'chmod', 'chown', 'curl', 'wget', 'git', 'npm',
-                                           'node', 'python', 'pip', 'yarn', 'pnpm', 'bash', 'sh', 'zsh'];
-                        if (commonCmds.includes(cmdName) || possibleCmd.includes(' ')) {
-                            command = possibleCmd;
-                            if (DEBUG) {
-                                console.log(`  [TOOL_CALL] found command (method2): "${command}"`);
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    
-    if (callId) {
-        if (DEBUG && !command) {
-            console.log(`  [TOOL_CALL] WARNING: callId=${callId} but command not found`);
-        }
-        return { command: command || 'unknown', callId };
-    }
-    
-    return null;
-}
-
-/**
- * 从 protobuf 响应中提取工具执行结果
- * 工具结果通常包含 ls、precmd 等标识
- */
-function extractToolResult(buffer) {
-    const bufferStr = buffer.toString('utf8');
-    
-    // 跳过工具调用请求（不是结果）
-    if (bufferStr.includes('tool_call.run_shell_command') || 
-        bufferStr.includes('server_message_data') ||
-        bufferStr.includes('orchestrator executed')) {
-        return null;
-    }
-    
-    // 检查是否包含工具结果标识
-    if (!bufferStr.includes('precmd-')) {
-        return null;
-    }
-    
-    // 提取工具输出（通常在 \x12 后面的大块数据中）
-    // 查找包含换行符的多行输出
-    const lines = bufferStr.split('\n');
-    const resultLines = [];
-    
-    for (const line of lines) {
-        // 清理不可打印字符
-        const cleaned = line.replace(/[\x00-\x1f\x7f-\x9f]/g, '').trim();
-        if (cleaned.length > 0) {
-            // 过滤掉 UUID 和系统标识
-            if (UUID_REGEX.test(cleaned)) continue;
-            if (cleaned.includes('call_') || cleaned.includes('precmd-')) continue;
-            if (cleaned.startsWith('$') && cleaned.length === 37) continue;
-            if (cleaned.includes('tool_call.') || cleaned.includes('server_message')) continue;
-            
-            // 保留有意义的内容
-            if (hasChinese(cleaned) || /[a-zA-Z0-9]/.test(cleaned)) {
-                resultLines.push(cleaned);
-            }
-        }
-    }
-    
-    if (resultLines.length > 0) {
-        return resultLines.join('\n');
-    }
-    
-    return null;
-}
-
-/**
- * 从 protobuf 响应中提取 agent_reasoning.reasoning 文本
- * 这是 AI 的推理过程，当没有 agent_output 时可能只有 reasoning
- */
-function extractReasoning(buffer) {
-    const bufferStr = buffer.toString('utf8');
-    
-    // 只处理 agent_reasoning
-    if (!bufferStr.includes('agent_reasoning.reasoning')) {
-        return null;
-    }
-    
-    const texts = [];
-    
-    // 使用 \x1a 嵌套解析（与 extractAgentText 类似）
-    for (let i = 0; i < buffer.length - 4; i++) {
-        if (buffer[i] === 0x1a) {
-            const outerLen = buffer[i + 1];
-            if (outerLen > 2 && outerLen < 200 && buffer[i + 2] === 0x0a) {
-                const innerLen = buffer[i + 3];
-                if (innerLen > 0 && innerLen <= outerLen - 2 && i + 4 + innerLen <= buffer.length) {
-                    const text = buffer.slice(i + 4, i + 4 + innerLen).toString('utf8');
-                    
-                    if (text.length === 0) continue;
-                    if (text.length === 36 && UUID_REGEX.test(text)) continue;
-                    
-                    // 过滤系统标识符
-                    if (text.includes('agent_') || text.includes('server_') || 
-                        text.includes('USER_') || text.includes('primary_') ||
-                        text.includes('call_') || text.includes('precmd-')) continue;
-                    
-                    // 检查是否有可见内容
-                    const hasContent = hasChinese(text) || /[a-zA-Z0-9\s\-_.,!?:;'"()\[\]{}@#$%^&*+=<>/\\|`~]/.test(text);
-                    
-                    if (hasContent) {
-                        if (text.length > 20 && BASE64_REGEX.test(text)) continue;
-                        texts.push(text);
-                    }
-                }
-            }
-        }
-    }
-
-    return texts.length > 0 ? texts.join('') : null;
-}
-
-/**
- * 综合提取响应内容（包括 agent_output、agent_reasoning、工具调用和工具结果）
- */
-function extractContent(buffer, debug = false) {
-    const bufferStr = buffer.toString('utf8');
-    
-    // 调试：打印原始数据的可读部分
-    if (debug) {
-        // 提取可打印字符
-        const printable = bufferStr.replace(/[\x00-\x1f\x7f-\x9f]/g, ' ').trim();
-        if (printable.length > 0) {
-            console.log(`  [RAW] ${printable.substring(0, 200)}${printable.length > 200 ? '...' : ''}`);
-        }
-    }
-    
-    // 优先提取 agent_output.text
-    const agentText = extractAgentText(buffer);
-    if (agentText) {
-        return { type: 'text', content: agentText };
-    }
-    
-    // 检测工具调用内容流（tool_call.create_documents.new_documents.content）
-    // 这些事件包含文档的实际内容，需要累积
-    if (bufferStr.includes('tool_call.create_documents.new_documents.content')) {
-        const contentTexts = [];
-        for (let i = 0; i < buffer.length - 4; i++) {
-            if (buffer[i] === 0x1a) {
-                const outerLen = buffer[i + 1];
-                if (outerLen > 2 && outerLen < 200 && buffer[i + 2] === 0x0a) {
-                    const innerLen = buffer[i + 3];
-                    if (innerLen > 0 && innerLen <= outerLen - 2 && i + 4 + innerLen <= buffer.length) {
-                        const text = buffer.slice(i + 4, i + 4 + innerLen).toString('utf8');
-                        if (text.length === 0) continue;
-                        if (text.length === 36 && UUID_REGEX.test(text)) continue;
-                        if (text.includes('tool_call.') || text.includes('new_documents')) continue;
-                        const hasContent = hasChinese(text) || /[a-zA-Z0-9#\-*\s]/.test(text);
-                        if (hasContent) contentTexts.push(text);
-                    }
-                }
-            }
-        }
-        if (contentTexts.length > 0) {
-            return { type: 'tool_content', content: contentTexts.join('') };
-        }
-    }
-    
-    // 检测工具调用请求
-    const toolCall = extractToolCall(buffer);
-    if (toolCall) {
-        return { type: 'tool_call', content: toolCall };
-    }
-    
-    // 尝试提取工具结果
-    const toolResult = extractToolResult(buffer);
-    if (toolResult) {
-        return { type: 'tool_result', content: toolResult };
-    }
-    
-    // 提取 agent_reasoning.reasoning（AI 推理过程）
-    const reasoning = extractReasoning(buffer);
-    if (reasoning) {
-        return { type: 'reasoning', content: reasoning };
-    }
-    
-    return null;
-}
-
 // ==================== API 请求 ====================
+
+// Proto 加载状态
+let protoLoaded = false;
+
+/**
+ * 确保 proto 已加载
+ */
+async function ensureProtoLoaded() {
+    if (!protoLoaded) {
+        await loadProtos();
+        protoLoaded = true;
+    }
+}
+
+/**
+ * 使用 protobufjs 解析响应事件
+ * @param {Buffer} buffer - base64 解码后的二进制数据
+ * @param {boolean} debug - 是否输出调试信息
+ * @returns {Array} 解析后的事件数组
+ */
+function parseEventWithProto(buffer, debug = false) {
+    try {
+        const responseEvent = decodeResponseEvent(buffer);
+        const events = parseWarpResponseEvent(responseEvent);
+
+        if (debug && events.length > 0) {
+            console.log(`  [PROTO] parsed ${events.length} events:`, events.map(e => e.type).join(', '));
+        }
+
+        return events;
+    } catch (e) {
+        if (debug) {
+            console.log(`  [PROTO] decode error: ${e.message}`);
+        }
+        return [];
+    }
+}
 
 /**
  * 发送非流式请求
@@ -885,7 +462,10 @@ function extractContent(buffer, debug = false) {
  * @param {Object} options.toolResult - 工具结果 { callId, command, output }
  * @param {string} options.workingDir - 工作目录
  */
-export function sendWarpRequest(query, accessToken, model = 'claude-4.1-opus', reqOptions = {}) {
+export async function sendWarpRequest(query, accessToken, model = 'claude-4.1-opus', reqOptions = {}) {
+    // 确保 proto 已加载
+    await ensureProtoLoaded();
+
     return new Promise((resolve, reject) => {
         const body = buildRequestBody(query, model, reqOptions);
         const DEBUG = process.env.WARP_DEBUG === 'true';
@@ -919,17 +499,12 @@ export function sendWarpRequest(query, accessToken, model = 'claude-4.1-opus', r
 
             let responseText = '';
             let toolCalls = [];
-            let toolResults = [];
-            let toolContentBuffer = '';  // 累积工具调用的文档内容
             let eventCount = 0;
-            let textEventCount = 0;
-            let buffer = '';  // 用于处理跨 chunk 的不完整行
+            const lineParser = new SSELineParser();  // 使用高性能解析器
+            let usage = { input_tokens: 0, output_tokens: 0 };
 
             res.on('data', (chunk) => {
-                buffer += chunk.toString();
-                const lines = buffer.split('\n');
-                // 保留最后一个可能不完整的行
-                buffer = lines.pop() || '';
+                const lines = lineParser.addChunk(chunk);
 
                 for (const line of lines) {
                     if (line.startsWith('data:')) {
@@ -938,44 +513,32 @@ export function sendWarpRequest(query, accessToken, model = 'claude-4.1-opus', r
                         if (eventData) {
                             try {
                                 const decoded = Buffer.from(eventData, 'base64');
-                                const extracted = extractContent(decoded, DEBUG);
-                                if (extracted) {
-                                    if (extracted.type === 'text') {
-                                        textEventCount++;
-                                        responseText += extracted.content;
+                                const events = parseEventWithProto(decoded, DEBUG);
+
+                                for (const event of events) {
+                                    if (event.type === 'text_delta') {
+                                        responseText += event.text;
                                         if (DEBUG) {
-                                            console.log(`  [WARP DEBUG] event#${eventCount} text: "${extracted.content.substring(0, 50)}${extracted.content.length > 50 ? '...' : ''}" (len=${extracted.content.length})`);
+                                            console.log(`  [WARP] text: "${event.text.substring(0, 50)}${event.text.length > 50 ? '...' : ''}"`);
                                         }
-                                    } else if (extracted.type === 'reasoning') {
-                                        // AI 推理过程也作为文本输出
-                                        textEventCount++;
-                                        responseText += extracted.content;
+                                    } else if (event.type === 'reasoning') {
+                                        // 不将 reasoning 添加到 responseText，避免思考内容污染输出
+                                        // responseText += event.reasoning || '';
                                         if (DEBUG) {
-                                            console.log(`  [WARP DEBUG] event#${eventCount} reasoning: "${extracted.content.substring(0, 50)}${extracted.content.length > 50 ? '...' : ''}" (len=${extracted.content.length})`);
+                                            console.log(`  [WARP] reasoning: "${(event.reasoning || '').substring(0, 50)}..."`);
                                         }
-                                    } else if (extracted.type === 'tool_content') {
-                                        // 累积工具调用的文档内容
-                                        toolContentBuffer += extracted.content;
+                                    } else if (event.type === 'tool_use') {
+                                        toolCalls.push(event.toolUse);
                                         if (DEBUG) {
-                                            console.log(`  [WARP DEBUG] event#${eventCount} tool_content: "${extracted.content.substring(0, 30)}..." (total=${toolContentBuffer.length})`);
+                                            console.log(`  [WARP] tool_use: ${event.toolUse.name}`);
                                         }
-                                    } else if (extracted.type === 'tool_call') {
-                                        // 如果有累积的工具内容，附加到工具调用
-                                        if (toolContentBuffer.length > 0) {
-                                            extracted.content.content = toolContentBuffer;
-                                            toolContentBuffer = '';
-                                        }
-                                        toolCalls.push(extracted.content);
-                                        if (DEBUG) {
-                                            console.log(`  [WARP DEBUG] event#${eventCount} tool_call: ${JSON.stringify(extracted.content)}`);
-                                        }
-                                    } else if (extracted.type === 'tool_result') {
-                                        toolResults.push(extracted.content);
+                                    } else if (event.type === 'stream_finished') {
+                                        usage = event.usage || usage;
                                     }
                                 }
                             } catch (e) {
                                 if (DEBUG) {
-                                    console.log(`  [WARP DEBUG] event#${eventCount} parse error: ${e.message}`);
+                                    console.log(`  [WARP] event#${eventCount} error: ${e.message}`);
                                 }
                             }
                         }
@@ -985,60 +548,42 @@ export function sendWarpRequest(query, accessToken, model = 'claude-4.1-opus', r
 
             res.on('end', () => {
                 clearTimeout(timeout);
-                // 处理 buffer 中剩余的数据
-                if (buffer.startsWith('data:')) {
-                    eventCount++;
-                    const eventData = buffer.substring(5).trim();
+                // 处理剩余数据
+                const remaining = lineParser.flush();
+                if (remaining.startsWith('data:')) {
+                    const eventData = remaining.substring(5).trim();
                     if (eventData) {
                         try {
                             const decoded = Buffer.from(eventData, 'base64');
-                            const extracted = extractContent(decoded);
-                            if (extracted && (extracted.type === 'text' || extracted.type === 'reasoning')) {
-                                textEventCount++;
-                                responseText += extracted.content;
-                                if (DEBUG) {
-                                    console.log(`  [WARP DEBUG] final event#${eventCount} ${extracted.type}: "${extracted.content.substring(0, 50)}..."`);
+                            const events = parseEventWithProto(decoded, DEBUG);
+
+                            for (const event of events) {
+                                if (event.type === 'text_delta') {
+                                    responseText += event.text;
+                                } else if (event.type === 'reasoning') {
+                                    // 不将 reasoning 添加到 responseText
+                                } else if (event.type === 'tool_use') {
+                                    toolCalls.push(event.toolUse);
+                                } else if (event.type === 'stream_finished') {
+                                    usage = event.usage || usage;
                                 }
-                            } else if (extracted && extracted.type === 'tool_content') {
-                                toolContentBuffer += extracted.content;
                             }
                         } catch (e) { }
                     }
                 }
-                
-                // 如果有累积的工具内容但还没附加到工具调用，附加到最后一个工具调用
-                if (toolContentBuffer.length > 0 && toolCalls.length > 0) {
-                    const lastToolCall = toolCalls[toolCalls.length - 1];
-                    if (!lastToolCall.content || lastToolCall.content.length === 0) {
-                        lastToolCall.content = toolContentBuffer;
-                        if (DEBUG) {
-                            console.log(`  [WARP DEBUG] attached toolContentBuffer (${toolContentBuffer.length}c) to last tool_call`);
-                        }
-                    }
-                }
-                
-                // 如果工具调用内容仍为空，使用 responseText 作为内容
-                for (const tc of toolCalls) {
-                    if ((!tc.content || tc.content.length === 0) && responseText.length > 0) {
-                        tc.content = responseText;
-                        if (DEBUG) {
-                            console.log(`  [WARP DEBUG] using responseText (${responseText.length}c) as tool_call content`);
-                        }
-                    }
-                }
-                
+
                 if (DEBUG) {
-                    console.log(`  [WARP DEBUG] total: ${eventCount} events, ${textEventCount} text events, responseText.length=${responseText.length}, toolContentBuffer.length=${toolContentBuffer.length}`);
+                    console.log(`  [WARP] total: ${eventCount} events, text=${responseText.length}c, tools=${toolCalls.length}`);
                 }
-                
+
                 // 返回响应文本和工具调用信息
                 resolve({
                     text: responseText,
                     toolCalls: toolCalls,
-                    toolResults: toolResults
+                    usage: usage
                 });
             });
-            
+
             res.on('error', (err) => {
                 clearTimeout(timeout);
                 reject(err);
@@ -1056,9 +601,21 @@ export function sendWarpRequest(query, accessToken, model = 'claude-4.1-opus', r
 
 /**
  * 发送流式请求
+ * @param {string} query - 用户查询
+ * @param {string} accessToken - 访问令牌
+ * @param {string} model - 模型名称
+ * @param {Function} onData - 数据回调 (text, event)
+ * @param {Function} onEnd - 结束回调 (usage)
+ * @param {Function} onError - 错误回调 (error)
  */
-export function sendWarpStreamRequest(query, accessToken, model, onData, onEnd, onError) {
+export async function sendWarpStreamRequest(query, accessToken, model, onData, onEnd, onError) {
+    // 确保 proto 已加载
+    await ensureProtoLoaded();
+
     const body = buildRequestBody(query, model);
+    const DEBUG = process.env.WARP_DEBUG === 'true';
+    const lineParser = new SSELineParser();  // 使用高性能解析器
+    let usage = { input_tokens: 0, output_tokens: 0 };
 
     const options = {
         hostname: WARP_CONFIG.host,
@@ -1081,8 +638,7 @@ export function sendWarpStreamRequest(query, accessToken, model, onData, onEnd, 
         }
 
         res.on('data', (chunk) => {
-            const text = chunk.toString();
-            const lines = text.split('\n');
+            const lines = lineParser.addChunk(chunk);
 
             for (const line of lines) {
                 if (line.startsWith('data:')) {
@@ -1090,17 +646,53 @@ export function sendWarpStreamRequest(query, accessToken, model, onData, onEnd, 
                     if (eventData) {
                         try {
                             const decoded = Buffer.from(eventData, 'base64');
-                            const content = extractAgentText(decoded);
-                            if (content) {
-                                onData(content);
+                            const events = parseEventWithProto(decoded, DEBUG);
+
+                            for (const event of events) {
+                                if (event.type === 'text_delta') {
+                                    onData(event.text, event);
+                                } else if (event.type === 'reasoning') {
+                                    onData(event.reasoning || '', event);
+                                } else if (event.type === 'tool_use') {
+                                    onData(null, event);
+                                } else if (event.type === 'stream_finished') {
+                                    usage = event.usage || usage;
+                                }
                             }
-                        } catch (e) { }
+                        } catch (e) {
+                            if (DEBUG) {
+                                console.log(`  [WARP STREAM] parse error: ${e.message}`);
+                            }
+                        }
                     }
                 }
             }
         });
 
-        res.on('end', onEnd);
+        res.on('end', () => {
+            // 处理剩余数据
+            const remaining = lineParser.flush();
+            if (remaining.startsWith('data:')) {
+                const eventData = remaining.substring(5).trim();
+                if (eventData) {
+                    try {
+                        const decoded = Buffer.from(eventData, 'base64');
+                        const events = parseEventWithProto(decoded, DEBUG);
+
+                        for (const event of events) {
+                            if (event.type === 'text_delta') {
+                                onData(event.text, event);
+                            } else if (event.type === 'reasoning') {
+                                onData(event.reasoning || '', event);
+                            } else if (event.type === 'stream_finished') {
+                                usage = event.usage || usage;
+                            }
+                        }
+                    } catch (e) { }
+                }
+            }
+            onEnd(usage);
+        });
     });
 
     req.on('error', onError);

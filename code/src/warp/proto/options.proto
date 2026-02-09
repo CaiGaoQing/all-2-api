@@ -1,0 +1,11 @@
+// 从 Warp 二进制自动提取
+// 原始文件: options.proto
+// 提取时间: 2026-01-27 12:35:47
+
+syntax = "proto3";
+
+package warp.multi_agent.v1;
+
+import "google/protobuf/descriptor.proto";
+
+option go_package = "github.com/warp/warp-proto-apis/multi_agent/v1";

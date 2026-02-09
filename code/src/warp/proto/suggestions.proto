@@ -1,0 +1,26 @@
+// 从 Warp 二进制自动提取
+// 原始文件: suggestions.proto
+// 提取时间: 2026-01-27 12:35:47
+
+syntax = "proto3";
+
+package warp.multi_agent.v1;
+
+option go_package = "github.com/warp/warp-proto-apis/multi_agent/v1";
+
+message Suggestions {
+    repeated warp.multi_agent.v1.SuggestedRule rules = 1;
+    repeated warp.multi_agent.v1.SuggestedAgentModeWorkflow workflows = 2;
+}
+
+message SuggestedRule {
+    string name = 1;
+    string content = 2;
+    string logging_id = 3;
+}
+
+message SuggestedAgentModeWorkflow {
+    string name = 1;
+    string prompt = 2;
+    string logging_id = 3;
+}

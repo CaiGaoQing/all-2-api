@@ -1,6 +1,7 @@
 /**
  * Warp Protobuf 加载器
  * 使用 protobufjs 加载和编解码 Warp 协议消息
+ * 基于 src/warp/proto/ 目录下自动提取的 proto 定义
  */
 
 import protobuf from 'protobufjs';
@@ -8,17 +9,29 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const PROTO_DIR = path.join(__dirname, '../..', 'warp-protobuf-master');
+// 使用本地 proto 目录（从 Warp 二进制自动提取）
+const PROTO_DIR = path.join(__dirname, 'proto');
 
 // 缓存加载的 root 和消息类型
 let root = null;
 let messageTypes = {};
+let loadingPromise = null;  // 防止重复加载
 
 /**
  * 加载所有 proto 文件
  * @returns {Promise<Object>} 消息类型对象
  */
 export async function loadProtos() {
+    if (root) return messageTypes;
+
+    // 防止并发加载
+    if (loadingPromise) return loadingPromise;
+
+    loadingPromise = _loadProtosInternal();
+    return loadingPromise;
+}
+
+async function _loadProtosInternal() {
     if (root) return messageTypes;
 
     // 创建新的 Root 实例
@@ -31,6 +44,10 @@ export async function loadProtos() {
             // protobufjs 内置了这些类型，返回 null 让它使用内置的
             return null;
         }
+        // 如果 target 已经是绝对路径，直接返回
+        if (path.isAbsolute(target)) {
+            return target;
+        }
         // 其他文件从 PROTO_DIR 加载
         return path.join(PROTO_DIR, target);
     };
@@ -40,6 +57,7 @@ export async function loadProtos() {
         'options.proto',
         'citations.proto',
         'file_content.proto',
+        'document_content.proto',
         'attachment.proto',
         'todo.proto',
         'suggestions.proto',
@@ -47,44 +65,104 @@ export async function loadProtos() {
         'task.proto',
         'request.proto',
         'response.proto',
+        'conversation_data.proto',
     ];
 
     for (const file of protoFiles) {
-        await root.load(path.join(PROTO_DIR, file), { keepCase: true });
+        try {
+            await root.load(path.join(PROTO_DIR, file), { keepCase: true });
+        } catch (e) {
+            // 某些文件可能不存在，跳过
+            console.warn(`Warning: Could not load ${file}: ${e.message}`);
+        }
     }
 
-    // 查找并缓存消息类型
+    // 查找并缓存消息类型（使用 try-catch 以处理可能不存在的类型）
+    const lookupTypeSafe = (name) => {
+        try {
+            return root.lookupType(name);
+        } catch (e) {
+            return null;
+        }
+    };
+
+    const lookupEnumSafe = (name) => {
+        try {
+            return root.lookupEnum(name);
+        } catch (e) {
+            return null;
+        }
+    };
+
     messageTypes = {
         // 请求/响应
-        Request: root.lookupType('warp.multi_agent.v1.Request'),
-        ResponseEvent: root.lookupType('warp.multi_agent.v1.ResponseEvent'),
+        Request: lookupTypeSafe('warp.multi_agent.v1.Request'),
+        ResponseEvent: lookupTypeSafe('warp.multi_agent.v1.ResponseEvent'),
 
         // 任务相关
-        Task: root.lookupType('warp.multi_agent.v1.Task'),
-        TaskStatus: root.lookupType('warp.multi_agent.v1.TaskStatus'),
-        Message: root.lookupType('warp.multi_agent.v1.Message'),
+        Task: lookupTypeSafe('warp.multi_agent.v1.Task'),
+        Message: lookupTypeSafe('warp.multi_agent.v1.Message'),
 
         // 输入上下文
-        InputContext: root.lookupType('warp.multi_agent.v1.InputContext'),
+        InputContext: lookupTypeSafe('warp.multi_agent.v1.InputContext'),
 
         // 文件内容
-        FileContent: root.lookupType('warp.multi_agent.v1.FileContent'),
-        FileContentLineRange: root.lookupType('warp.multi_agent.v1.FileContentLineRange'),
+        FileContent: lookupTypeSafe('warp.multi_agent.v1.FileContent'),
+        FileContentLineRange: lookupTypeSafe('warp.multi_agent.v1.FileContentLineRange'),
+        AnyFileContent: lookupTypeSafe('warp.multi_agent.v1.AnyFileContent'),
+        DocumentContent: lookupTypeSafe('warp.multi_agent.v1.DocumentContent'),
 
-        // 工具类型枚举
-        ToolType: root.lookupEnum('warp.multi_agent.v1.ToolType'),
+        // 枚举类型
+        ToolType: lookupEnumSafe('warp.multi_agent.v1.ToolType'),
+        AgentType: lookupEnumSafe('warp.multi_agent.v1.AgentType'),
 
         // 客户端动作
-        ClientAction: root.lookupType('warp.multi_agent.v1.ClientAction'),
+        ClientAction: lookupTypeSafe('warp.multi_agent.v1.ClientAction'),
 
         // 工具结果类型
-        RunShellCommandResult: root.lookupType('warp.multi_agent.v1.RunShellCommandResult'),
-        ReadFilesResult: root.lookupType('warp.multi_agent.v1.ReadFilesResult'),
-        ApplyFileDiffsResult: root.lookupType('warp.multi_agent.v1.ApplyFileDiffsResult'),
-        GrepResult: root.lookupType('warp.multi_agent.v1.GrepResult'),
-        FileGlobV2Result: root.lookupType('warp.multi_agent.v1.FileGlobV2Result'),
-        CallMCPToolResult: root.lookupType('warp.multi_agent.v1.CallMCPToolResult'),
-        ShellCommandFinished: root.lookupType('warp.multi_agent.v1.ShellCommandFinished'),
+        RunShellCommandResult: lookupTypeSafe('warp.multi_agent.v1.RunShellCommandResult'),
+        ReadFilesResult: lookupTypeSafe('warp.multi_agent.v1.ReadFilesResult'),
+        ApplyFileDiffsResult: lookupTypeSafe('warp.multi_agent.v1.ApplyFileDiffsResult'),
+        GrepResult: lookupTypeSafe('warp.multi_agent.v1.GrepResult'),
+        FileGlobResult: lookupTypeSafe('warp.multi_agent.v1.FileGlobResult'),
+        FileGlobV2Result: lookupTypeSafe('warp.multi_agent.v1.FileGlobV2Result'),
+        CallMCPToolResult: lookupTypeSafe('warp.multi_agent.v1.CallMCPToolResult'),
+        ReadMCPResourceResult: lookupTypeSafe('warp.multi_agent.v1.ReadMCPResourceResult'),
+        ShellCommandFinished: lookupTypeSafe('warp.multi_agent.v1.ShellCommandFinished'),
+        SearchCodebaseResult: lookupTypeSafe('warp.multi_agent.v1.SearchCodebaseResult'),
+        SuggestPlanResult: lookupTypeSafe('warp.multi_agent.v1.SuggestPlanResult'),
+        SuggestCreatePlanResult: lookupTypeSafe('warp.multi_agent.v1.SuggestCreatePlanResult'),
+
+        // 新增工具结果类型
+        ReadDocumentsResult: lookupTypeSafe('warp.multi_agent.v1.ReadDocumentsResult'),
+        EditDocumentsResult: lookupTypeSafe('warp.multi_agent.v1.EditDocumentsResult'),
+        CreateDocumentsResult: lookupTypeSafe('warp.multi_agent.v1.CreateDocumentsResult'),
+        WriteToLongRunningShellCommandResult: lookupTypeSafe('warp.multi_agent.v1.WriteToLongRunningShellCommandResult'),
+        ReadShellCommandOutputResult: lookupTypeSafe('warp.multi_agent.v1.ReadShellCommandOutputResult'),
+        UseComputerResult: lookupTypeSafe('warp.multi_agent.v1.UseComputerResult'),
+        RequestComputerUseResult: lookupTypeSafe('warp.multi_agent.v1.RequestComputerUseResult'),
+        ReadSkillResult: lookupTypeSafe('warp.multi_agent.v1.ReadSkillResult'),
+        InsertReviewCommentsResult: lookupTypeSafe('warp.multi_agent.v1.InsertReviewCommentsResult'),
+        SuggestNewConversationResult: lookupTypeSafe('warp.multi_agent.v1.SuggestNewConversationResult'),
+        SuggestPromptResult: lookupTypeSafe('warp.multi_agent.v1.SuggestPromptResult'),
+        OpenCodeReviewResult: lookupTypeSafe('warp.multi_agent.v1.OpenCodeReviewResult'),
+        InitProjectResult: lookupTypeSafe('warp.multi_agent.v1.InitProjectResult'),
+
+        // 其他类型
+        LongRunningShellCommandSnapshot: lookupTypeSafe('warp.multi_agent.v1.LongRunningShellCommandSnapshot'),
+        Coordinates: lookupTypeSafe('warp.multi_agent.v1.Coordinates'),
+        RawImage: lookupTypeSafe('warp.multi_agent.v1.RawImage'),
+        ScreenDimensions: lookupTypeSafe('warp.multi_agent.v1.ScreenDimensions'),
+        TodoItem: lookupTypeSafe('warp.multi_agent.v1.TodoItem'),
+        CreateTodoList: lookupTypeSafe('warp.multi_agent.v1.CreateTodoList'),
+        UpdatePendingTodos: lookupTypeSafe('warp.multi_agent.v1.UpdatePendingTodos'),
+        MarkTodosCompleted: lookupTypeSafe('warp.multi_agent.v1.MarkTodosCompleted'),
+        ReviewComment: lookupTypeSafe('warp.multi_agent.v1.ReviewComment'),
+        ReviewComments: lookupTypeSafe('warp.multi_agent.v1.ReviewComments'),
+        Suggestions: lookupTypeSafe('warp.multi_agent.v1.Suggestions'),
+        Citation: lookupTypeSafe('warp.multi_agent.v1.Citation'),
+        Attachment: lookupTypeSafe('warp.multi_agent.v1.Attachment'),
+        ConversationData: lookupTypeSafe('warp.multi_agent.v1.ConversationData'),
     };
 
     return messageTypes;
@@ -100,6 +178,23 @@ export async function getMessageTypes() {
     }
     return messageTypes;
 }
+
+/**
+ * 预加载 Proto 定义（在模块加载时调用）
+ * 用于减少首次请求延迟
+ */
+export function preloadProtos() {
+    if (!root && !loadingPromise) {
+        loadingPromise = _loadProtosInternal().catch(e => {
+            console.warn('[Warp Proto] Preload failed:', e.message);
+            loadingPromise = null;
+        });
+    }
+    return loadingPromise;
+}
+
+// 模块加载时自动预加载
+preloadProtos();
 
 /**
  * 编码 Request 消息
@@ -260,7 +355,7 @@ export function createTaskStatus(status = 'in_progress') {
     return statusMap[status] || statusMap['in_progress'];
 }
 
-// 导出 ToolType 枚举值常量（方便使用）
+// 导出 ToolType 枚举值常量（根据 PROBUG 提取的 task.proto 更新）
 export const TOOL_TYPES = {
     RUN_SHELL_COMMAND: 0,
     SEARCH_CODEBASE: 1,
@@ -274,5 +369,47 @@ export const TOOL_TYPES = {
     CALL_MCP_TOOL: 9,
     WRITE_TO_LONG_RUNNING_SHELL_COMMAND: 10,
     SUGGEST_NEW_CONVERSATION: 11,
-    FILE_GLOB_V2: 12
+    FILE_GLOB_V2: 12,
+    SUGGEST_PROMPT: 13,
+    OPEN_CODE_REVIEW: 14,
+    INIT_PROJECT: 15,
+    SUBAGENT: 16,
+    READ_DOCUMENTS: 17,
+    EDIT_DOCUMENTS: 18,
+    CREATE_DOCUMENTS: 19,
+    READ_SHELL_COMMAND_OUTPUT: 20,
+    USE_COMPUTER: 21,
+    INSERT_REVIEW_COMMENTS: 22,
+    READ_SKILL: 23,
+    REQUEST_COMPUTER_USE: 24
+};
+
+// AgentType 枚举
+export const AGENT_TYPES = {
+    AGENT_TYPE_UNKNOWN: 0,
+    AGENT_TYPE_PRIMARY: 1,
+    AGENT_TYPE_CLI: 2
+};
+
+// LLMProvider 枚举
+export const LLM_PROVIDERS = {
+    LLM_PROVIDER_UNKNOWN: 0,
+    LLM_PROVIDER_ANTHROPIC: 1,
+    LLM_PROVIDER_OPENAI: 2,
+    LLM_PROVIDER_GOOGLE: 3,
+    LLM_PROVIDER_XAI: 4,
+    LLM_PROVIDER_OPENROUTER: 5,
+    LLM_PROVIDER_AWS_BEDROCK: 6
+};
+
+// AutonomyLevel 枚举
+export const AUTONOMY_LEVELS = {
+    SUPERVISED: 0,
+    UNSUPERVISED: 1
+};
+
+// IsolationLevel 枚举
+export const ISOLATION_LEVELS = {
+    NONE: 0,
+    SANDBOX: 1
 };

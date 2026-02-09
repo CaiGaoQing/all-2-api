@@ -1,0 +1,24 @@
+// 从 Warp 二进制自动提取
+// 原始文件: citations.proto
+// 提取时间: 2026-01-27 12:35:47
+
+syntax = "proto3";
+
+package warp.multi_agent.v1;
+
+option go_package = "github.com/warp/warp-proto-apis/multi_agent/v1";
+
+enum DocumentType {
+    WARP_DRIVE_WORKFLOW = 0;
+    WARP_DRIVE_NOTEBOOK = 1;
+    WARP_DRIVE_ENV_VAR = 2;
+    RULE = 3;
+    WARP_DOCUMENTATION = 4;
+    WEB_PAGE = 5;
+    UNKNOWN = 6;
+}
+
+message Citation {
+    string document_id = 1;
+    warp.multi_agent.v1.DocumentType document_type = 2;
+}

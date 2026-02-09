@@ -1,0 +1,214 @@
+{
+  "extracted_at": "2026-01-27T12:35:47.762818",
+  "binary_path": "/Applications/Warp.app/Contents/MacOS/stable",
+  "binary_size_mb": 260.2853698730469,
+  "proto_files": [
+    {
+      "name": "options.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 0,
+      "enums": 0,
+      "dependencies": [
+        "google/protobuf/descriptor.proto"
+      ]
+    },
+    {
+      "name": "suggestions.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 3,
+      "enums": 0,
+      "dependencies": []
+    },
+    {
+      "name": "citations.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 1,
+      "enums": 1,
+      "dependencies": []
+    },
+    {
+      "name": "file_content.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 4,
+      "enums": 0,
+      "dependencies": [
+        "options.proto"
+      ]
+    },
+    {
+      "name": "document_content.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 1,
+      "enums": 0,
+      "dependencies": [
+        "options.proto",
+        "file_content.proto"
+      ]
+    },
+    {
+      "name": "attachment.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 12,
+      "enums": 0,
+      "dependencies": [
+        "google/protobuf/empty.proto",
+        "document_content.proto",
+        "options.proto",
+        "file_content.proto"
+      ]
+    },
+    {
+      "name": "input_context.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 1,
+      "enums": 0,
+      "dependencies": [
+        "google/protobuf/timestamp.proto",
+        "file_content.proto",
+        "attachment.proto",
+        "options.proto"
+      ]
+    },
+    {
+      "name": "todo.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 4,
+      "enums": 0,
+      "dependencies": []
+    },
+    {
+      "name": "task.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 36,
+      "enums": 2,
+      "dependencies": [
+        "google/protobuf/empty.proto",
+        "google/protobuf/descriptor.proto",
+        "google/protobuf/struct.proto",
+        "google/protobuf/timestamp.proto",
+        "google/protobuf/duration.proto",
+        "citations.proto",
+        "input_context.proto",
+        "attachment.proto",
+        "file_content.proto",
+        "document_content.proto",
+        "options.proto",
+        "todo.proto"
+      ]
+    },
+    {
+      "name": "response.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 2,
+      "enums": 1,
+      "dependencies": [
+        "google/protobuf/field_mask.proto",
+        "options.proto",
+        "suggestions.proto",
+        "task.proto"
+      ]
+    },
+    {
+      "name": "request.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 3,
+      "enums": 2,
+      "dependencies": [
+        "google/protobuf/empty.proto",
+        "google/protobuf/struct.proto",
+        "input_context.proto",
+        "attachment.proto",
+        "options.proto",
+        "suggestions.proto",
+        "task.proto"
+      ]
+    },
+    {
+      "name": "conversation_data.proto",
+      "package": "warp.multi_agent.v1",
+      "messages": 1,
+      "enums": 0,
+      "dependencies": [
+        "task.proto"
+      ]
+    }
+  ],
+  "failed_files": [],
+  "message_types": [
+    "AgentType",
+    "AnyFileContent",
+    "ApplyFileDiffsResult",
+    "Attachment",
+    "AutonomyLevel",
+    "BaseRef",
+    "BinaryFileContent",
+    "CallMCPToolResult",
+    "Citation",
+    "ClientAction",
+    "Coordinates",
+    "CreateDocumentsResult",
+    "CreateTodoList",
+    "CurrentRef",
+    "DiffHunk",
+    "DiffSet",
+    "DocumentContent",
+    "DocumentType",
+    "DriveObject",
+    "EditDocumentsResult",
+    "ExecutedShellCommand",
+    "FileContent",
+    "FileContentLineRange",
+    "FileGlobResult",
+    "FileGlobV2Result",
+    "GenericStringObject",
+    "GrepResult",
+    "InitProjectResult",
+    "InputContext",
+    "InsertReviewCommentsResult",
+    "IsolationLevel",
+    "LLMProvider",
+    "LongRunningShellCommandSnapshot",
+    "MCPResourceContent",
+    "MarkTodosCompleted",
+    "Message",
+    "MessageMCP",
+    "Notebook",
+    "OpenCodeReviewResult",
+    "PermissionDenied",
+    "RawImage",
+    "ReadDocumentsResult",
+    "ReadFilesResult",
+    "ReadMCPResourceResult",
+    "ReadShellCommandOutputResult",
+    "ReadSkillResult",
+    "Request",
+    "RequestComputerUseResult",
+    "ResponseEvent",
+    "ReviewComment",
+    "ReviewComments",
+    "RunShellCommandResult",
+    "RunningShellCommand",
+    "ScreenDimensions",
+    "SearchCodebaseResult",
+    "ShellCommandError",
+    "ShellCommandFinished",
+    "Skill",
+    "SkillsContext",
+    "SuggestCreatePlanResult",
+    "SuggestNewConversationResult",
+    "SuggestPlanResult",
+    "SuggestPromptResult",
+    "SuggestedAgentModeWorkflow",
+    "SuggestedRule",
+    "Suggestions",
+    "Task",
+    "TodoItem",
+    "ToolType",
+    "UpdatePendingTodos",
+    "UseComputerResult",
+    "UserQueryMode",
+    "Workflow",
+    "WriteToLongRunningShellCommandResult"
+  ],
+  "total_message_types": 74
+}

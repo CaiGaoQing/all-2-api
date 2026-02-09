@@ -269,6 +269,7 @@ function convertAssistantMessage(msg, toolCallMap) {
 
 /**
  * 解析 Warp ResponseEvent 并转换为 Claude API 格式的事件
+ * 基于 PROBUG 提取的 task.proto 和 response.proto 定义更新
  * @param {Object} responseEvent - Warp ResponseEvent 对象
  * @returns {Array} Claude 格式事件数组
  */
@@ -292,17 +293,8 @@ export function parseWarpResponseEvent(responseEvent) {
             // AppendToMessageContent - 流式文本增量
             if (action.append_to_message_content) {
                 const msg = action.append_to_message_content.message;
-                if (msg?.agent_output?.text) {
-                    events.push({
-                        type: 'text_delta',
-                        text: msg.agent_output.text
-                    });
-                }
-                if (msg?.agent_output?.reasoning) {
-                    events.push({
-                        type: 'reasoning_delta',
-                        text: msg.agent_output.reasoning
-                    });
+                if (msg) {
+                    parseMessageContent(msg, events);
                 }
             }
 
@@ -311,33 +303,15 @@ export function parseWarpResponseEvent(responseEvent) {
                 const taskMessages = action.add_messages_to_task.messages || [];
 
                 for (const msg of taskMessages) {
-                    if (msg.agent_output) {
-                        events.push({
-                            type: 'agent_output',
-                            text: msg.agent_output.text || '',
-                            reasoning: msg.agent_output.reasoning || ''
-                        });
-                    }
-                    if (msg.tool_call) {
-                        const claudeToolUse = warpToolCallToClaudeToolUse(msg.tool_call);
-                        if (claudeToolUse) {
-                            events.push({
-                                type: 'tool_use',
-                                toolUse: claudeToolUse
-                            });
-                        }
-                    }
+                    parseMessageContent(msg, events);
                 }
             }
 
             // UpdateTaskMessage - 消息更新
             if (action.update_task_message) {
                 const msg = action.update_task_message.message;
-                if (msg?.agent_output?.text) {
-                    events.push({
-                        type: 'text_delta',
-                        text: msg.agent_output.text
-                    });
+                if (msg) {
+                    parseMessageContent(msg, events);
                 }
             }
 
@@ -350,12 +324,77 @@ export function parseWarpResponseEvent(responseEvent) {
                 });
             }
 
-            // UpdateTaskStatus - 任务状态更新
+            // UpdateTaskStatus - 任务状态更新 (已废弃，但保留兼容)
             if (action.update_task_status) {
                 events.push({
                     type: 'task_status',
                     taskId: action.update_task_status.task_id,
                     status: action.update_task_status.task_status
+                });
+            }
+
+            // UpdateTaskSummary - 任务摘要更新
+            if (action.update_task_summary) {
+                events.push({
+                    type: 'task_summary',
+                    taskId: action.update_task_summary.task_id,
+                    summary: action.update_task_summary.summary
+                });
+            }
+
+            // UpdateTaskDescription - 任务描述更新
+            if (action.update_task_description) {
+                events.push({
+                    type: 'task_description',
+                    taskId: action.update_task_description.task_id,
+                    description: action.update_task_description.description
+                });
+            }
+
+            // UpdateTaskServerData - 服务器数据更新
+            if (action.update_task_server_data) {
+                events.push({
+                    type: 'task_server_data',
+                    taskId: action.update_task_server_data.task_id,
+                    serverData: action.update_task_server_data.server_data
+                });
+            }
+
+            // ShowSuggestions - 显示建议
+            if (action.show_suggestions) {
+                events.push({
+                    type: 'suggestions',
+                    suggestions: action.show_suggestions
+                });
+            }
+
+            // BeginTransaction / CommitTransaction / RollbackTransaction
+            if (action.begin_transaction) {
+                events.push({ type: 'transaction_begin' });
+            }
+            if (action.commit_transaction) {
+                events.push({ type: 'transaction_commit' });
+            }
+            if (action.rollback_transaction) {
+                events.push({ type: 'transaction_rollback' });
+            }
+
+            // StartNewConversation
+            if (action.start_new_conversation) {
+                events.push({
+                    type: 'new_conversation',
+                    startFromMessageId: action.start_new_conversation.start_from_message_id
+                });
+            }
+
+            // MoveMessagesToNewTask
+            if (action.move_messages_to_new_task) {
+                events.push({
+                    type: 'move_messages',
+                    sourceTaskId: action.move_messages_to_new_task.source_task_id,
+                    newTask: action.move_messages_to_new_task.new_task,
+                    firstMessageId: action.move_messages_to_new_task.first_message_id,
+                    lastMessageId: action.move_messages_to_new_task.last_message_id
                 });
             }
         }
@@ -374,11 +413,15 @@ export function parseWarpResponseEvent(responseEvent) {
         } else if (finished.max_token_limit) {
             stopReason = 'max_tokens';
         } else if (finished.context_window_exceeded) {
-          stopReason = 'context_window_exceeded';
+            stopReason = 'context_window_exceeded';
         } else if (finished.llm_unavailable) {
             stopReason = 'llm_unavailable';
         } else if (finished.internal_error) {
             stopReason = 'internal_error';
+        } else if (finished.invalid_api_key) {
+            stopReason = 'invalid_api_key';
+        } else if (finished.other) {
+            stopReason = 'other';
         }
 
         // 提取 token 使用量
@@ -386,6 +429,7 @@ export function parseWarpResponseEvent(responseEvent) {
         let outputTokens = 0;
         let cacheReadTokens = 0;
         let cacheWriteTokens = 0;
+        let costInCents = 0;
 
         if (finished.token_usage && finished.token_usage.length > 0) {
             for (const usage of finished.token_usage) {
@@ -393,6 +437,7 @@ export function parseWarpResponseEvent(responseEvent) {
                 outputTokens += usage.output || 0;
                 cacheReadTokens += usage.input_cache_read || 0;
                 cacheWriteTokens += usage.input_cache_write || 0;
+                costInCents += usage.cost_in_cents || 0;
             }
         }
 
@@ -405,11 +450,208 @@ export function parseWarpResponseEvent(responseEvent) {
                 cache_read_input_tokens: cacheReadTokens,
                 cache_creation_input_tokens: cacheWriteTokens
             },
-            errorMessage: finished.internal_error?.message || null
+            cost: costInCents,
+            errorMessage: finished.internal_error?.message || null,
+            invalidApiKey: finished.invalid_api_key ? {
+                provider: finished.invalid_api_key.provider,
+                modelName: finished.invalid_api_key.model_name
+            } : null,
+            shouldRefreshModelConfig: finished.should_refresh_model_config || false
         });
     }
 
     return events;
+}
+
+/**
+ * 解析单个消息内容并添加到事件数组
+ * @param {Object} msg - Warp Message 对象
+ * @param {Array} events - 事件数组
+ */
+function parseMessageContent(msg, events) {
+    // agent_output - 代理输出文本
+    if (msg.agent_output) {
+        if (msg.agent_output.text) {
+            events.push({
+                type: 'text_delta',
+                text: msg.agent_output.text
+            });
+        }
+    }
+
+    // agent_reasoning - 代理推理（思考过程）
+    if (msg.agent_reasoning) {
+        events.push({
+            type: 'reasoning',
+            reasoning: msg.agent_reasoning.reasoning || '',
+            finishedDuration: msg.agent_reasoning.finished_duration
+        });
+    }
+
+    // tool_call - 工具调用
+    if (msg.tool_call) {
+        const claudeToolUse = warpToolCallToClaudeToolUse(msg.tool_call);
+        if (claudeToolUse) {
+            events.push({
+                type: 'tool_use',
+                toolUse: claudeToolUse
+            });
+        }
+    }
+
+    // tool_call_result - 工具调用结果
+    if (msg.tool_call_result) {
+        events.push({
+            type: 'tool_result',
+            toolCallId: msg.tool_call_result.tool_call_id,
+            result: msg.tool_call_result
+        });
+    }
+
+    // update_todos - Todo 更新
+    if (msg.update_todos) {
+        const todoOp = msg.update_todos;
+        if (todoOp.create_todo_list) {
+            events.push({
+                type: 'todo_create',
+                todos: todoOp.create_todo_list.initial_todos || []
+            });
+        }
+        if (todoOp.update_pending_todos) {
+            events.push({
+                type: 'todo_update',
+                todos: todoOp.update_pending_todos.updated_pending_todos || []
+            });
+        }
+        if (todoOp.mark_todos_completed) {
+            events.push({
+                type: 'todo_complete',
+                todoIds: todoOp.mark_todos_completed.todo_ids || []
+            });
+        }
+    }
+
+    // web_search - Web 搜索状态
+    if (msg.web_search) {
+        const status = msg.web_search.status;
+        if (status?.searching) {
+            events.push({
+                type: 'web_search_start',
+                query: status.searching.query
+            });
+        }
+        if (status?.success) {
+            events.push({
+                type: 'web_search_result',
+                query: status.success.query,
+                pages: (status.success.pages || []).map(p => ({
+                    url: p.url,
+                    title: p.title
+                }))
+            });
+        }
+        if (status?.error) {
+            events.push({
+                type: 'web_search_error'
+            });
+        }
+    }
+
+    // web_fetch - Web 获取状态
+    if (msg.web_fetch) {
+        const status = msg.web_fetch.status;
+        if (status?.fetching) {
+            events.push({
+                type: 'web_fetch_start',
+                urls: status.fetching.urls || []
+            });
+        }
+        if (status?.success) {
+            events.push({
+                type: 'web_fetch_result',
+                pages: (status.success.pages || []).map(p => ({
+                    url: p.url,
+                    title: p.title,
+                    success: p.success
+                }))
+            });
+        }
+        if (status?.error) {
+            events.push({
+                type: 'web_fetch_error'
+            });
+        }
+    }
+
+    // summarization - 摘要
+    if (msg.summarization) {
+        if (msg.summarization.conversation_summary) {
+            events.push({
+                type: 'summarization',
+                summary: msg.summarization.conversation_summary.summary,
+                tokenCount: msg.summarization.conversation_summary.token_count,
+                finishedDuration: msg.summarization.finished_duration
+            });
+        }
+        if (msg.summarization.tool_call_result_summary) {
+            events.push({
+                type: 'tool_result_summarization',
+                finishedDuration: msg.summarization.finished_duration
+            });
+        }
+    }
+
+    // code_review - 代码审查
+    if (msg.code_review) {
+        events.push({
+            type: 'code_review',
+            comments: msg.code_review.comments
+        });
+    }
+
+    // update_review_comments - 更新审查评论
+    if (msg.update_review_comments) {
+        if (msg.update_review_comments.address_review_comments) {
+            events.push({
+                type: 'review_comments_addressed',
+                commentIds: msg.update_review_comments.address_review_comments.comment_ids || []
+            });
+        }
+    }
+
+    // server_event - 服务器事件
+    if (msg.server_event) {
+        events.push({
+            type: 'server_event',
+            payload: msg.server_event.payload
+        });
+    }
+
+    // debug_output - 调试输出
+    if (msg.debug_output) {
+        events.push({
+            type: 'debug',
+            text: msg.debug_output.text
+        });
+    }
+
+    // user_query - 用户查询（通常不会在响应中出现，但保留兼容）
+    if (msg.user_query) {
+        events.push({
+            type: 'user_query',
+            query: msg.user_query.query,
+            mode: msg.user_query.mode,
+            intendedAgent: msg.user_query.intended_agent
+        });
+    }
+
+    // system_query - 系统查询
+    if (msg.system_query) {
+        events.push({
+            type: 'system_query',
+            systemQuery: msg.system_query
+        });
+    }
 }
 
 /**
@@ -458,6 +700,15 @@ export function convertToClaudeSSE(events, state) {
                     state.blockIndex++;
                     state.textBlockStarted = false;
                 }
+                // 结束之前的思考块
+                if (state.thinkingBlockStarted) {
+                    sseData.push({
+                        event: 'content_block_stop',
+                        data: { type: 'content_block_stop', index: state.blockIndex }
+                    });
+                    state.blockIndex++;
+                    state.thinkingBlockStarted = false;
+                }
 
                 // 开始工具使用块
                 sseData.push({
@@ -498,8 +749,90 @@ export function convertToClaudeSSE(events, state) {
                 state.blockIndex++;
                 break;
 
+            case 'reasoning':
+                // 处理推理/思考内容
+                if (!state.thinkingBlockStarted) {
+                    // 如果有文本块打开，先关闭
+                    if (state.textBlockStarted) {
+                        sseData.push({
+                            event: 'content_block_stop',
+                            data: { type: 'content_block_stop', index: state.blockIndex }
+                        });
+                        state.blockIndex++;
+                        state.textBlockStarted = false;
+                    }
+
+                    sseData.push({
+                        event: 'content_block_start',
+                        data: {
+                            type: 'content_block_start',
+                            index: state.blockIndex,
+                            content_block: { type: 'thinking', thinking: '' }
+                        }
+                    });
+                    state.thinkingBlockStarted = true;
+                }
+
+                if (event.reasoning) {
+                    sseData.push({
+                        event: 'content_block_delta',
+                        data: {
+                            type: 'content_block_delta',
+                            index: state.blockIndex,
+                            delta: { type: 'thinking_delta', thinking: event.reasoning }
+                        }
+                    });
+                    state.thinkingText = (state.thinkingText || '') + event.reasoning;
+                }
+                break;
+
+            case 'todo_create':
+            case 'todo_update':
+            case 'todo_complete':
+                // Todo 事件 - 存储在 state 中供后续使用
+                state.todos = state.todos || { items: [], completed: [] };
+                if (event.type === 'todo_create' || event.type === 'todo_update') {
+                    state.todos.items = event.todos;
+                }
+                if (event.type === 'todo_complete') {
+                    state.todos.completed.push(...event.todoIds);
+                }
+                break;
+
+            case 'web_search_start':
+            case 'web_search_result':
+            case 'web_search_error':
+                // Web 搜索事件 - 存储在 state 中
+                state.webSearch = state.webSearch || [];
+                state.webSearch.push(event);
+                break;
+
+            case 'web_fetch_start':
+            case 'web_fetch_result':
+            case 'web_fetch_error':
+                // Web 获取事件 - 存储在 state 中
+                state.webFetch = state.webFetch || [];
+                state.webFetch.push(event);
+                break;
+
+            case 'summarization':
+                // 摘要事件 - 存储在 state 中
+                state.summarization = {
+                    summary: event.summary,
+                    tokenCount: event.tokenCount
+                };
+                break;
+
             case 'stream_finished':
                 // 结束任何打开的块
+                if (state.thinkingBlockStarted) {
+                    sseData.push({
+                        event: 'content_block_stop',
+                        data: { type: 'content_block_stop', index: state.blockIndex }
+                    });
+                    state.blockIndex++;
+                    state.thinkingBlockStarted = false;
+                }
                 if (state.textBlockStarted) {
                     sseData.push({
                         event: 'content_block_stop',
@@ -529,6 +862,13 @@ export function convertToClaudeSSE(events, state) {
                 state.finished = true;
                 state.usage = event.usage;
                 state.stopReason = stopReason;
+                state.cost = event.cost;
+                break;
+
+            default:
+                // 其他事件类型存储在 state 中供调试
+                state.otherEvents = state.otherEvents || [];
+                state.otherEvents.push(event);
                 break;
         }
     }

@@ -1,0 +1,27 @@
+// 从 Warp 二进制自动提取
+// 原始文件: todo.proto
+// 提取时间: 2026-01-27 12:35:47
+
+syntax = "proto3";
+
+package warp.multi_agent.v1;
+
+option go_package = "github.com/warp/warp-proto-apis/multi_agent/v1";
+
+message TodoItem {
+    string id = 1;
+    string title = 2;
+    string description = 3;
+}
+
+message CreateTodoList {
+    repeated warp.multi_agent.v1.TodoItem initial_todos = 1;
+}
+
+message UpdatePendingTodos {
+    repeated warp.multi_agent.v1.TodoItem updated_pending_todos = 1;
+}
+
+message MarkTodosCompleted {
+    repeated string todo_ids = 1;
+}

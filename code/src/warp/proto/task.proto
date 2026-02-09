@@ -1,0 +1,1081 @@
+// 从 Warp 二进制自动提取
+// 原始文件: task.proto
+// 提取时间: 2026-01-27 12:35:47
+
+syntax = "proto3";
+
+package warp.multi_agent.v1;
+
+import "google/protobuf/empty.proto";
+import "google/protobuf/descriptor.proto";
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/duration.proto";
+import "citations.proto";
+import "input_context.proto";
+import "attachment.proto";
+import "file_content.proto";
+import "document_content.proto";
+import "options.proto";
+import "todo.proto";
+
+option go_package = "github.com/warp/warp-proto-apis/multi_agent/v1";
+
+enum ToolType {
+    RUN_SHELL_COMMAND = 0;
+    SEARCH_CODEBASE = 1;
+    READ_FILES = 2;
+    APPLY_FILE_DIFFS = 3;
+    SUGGEST_PLAN = 4;
+    SUGGEST_CREATE_PLAN = 5;
+    GREP = 6;
+    FILE_GLOB = 7;
+    READ_MCP_RESOURCE = 8;
+    CALL_MCP_TOOL = 9;
+    WRITE_TO_LONG_RUNNING_SHELL_COMMAND = 10;
+    SUGGEST_NEW_CONVERSATION = 11;
+    FILE_GLOB_V2 = 12;
+    SUGGEST_PROMPT = 13;
+    OPEN_CODE_REVIEW = 14;
+    INIT_PROJECT = 15;
+    SUBAGENT = 16;
+    READ_DOCUMENTS = 17;
+    EDIT_DOCUMENTS = 18;
+    CREATE_DOCUMENTS = 19;
+    READ_SHELL_COMMAND_OUTPUT = 20;
+    USE_COMPUTER = 21;
+    INSERT_REVIEW_COMMENTS = 22;
+    READ_SKILL = 23;
+    REQUEST_COMPUTER_USE = 24;
+}
+
+enum AgentType {
+    AGENT_TYPE_UNKNOWN = 0;
+    AGENT_TYPE_PRIMARY = 1;
+    AGENT_TYPE_CLI = 2;
+}
+
+message Task {
+    message Dependencies {
+        string parent_task_id = 1;
+    }
+
+    string id = 1;
+    string description = 2;
+    warp.multi_agent.v1.Task.Dependencies dependencies = 3;
+    repeated warp.multi_agent.v1.Message messages = 5;
+    string summary = 6;
+    string server_data = 8;
+}
+
+message ReviewComments {
+    repeated warp.multi_agent.v1.ReviewComment pending_comments = 1;
+    repeated warp.multi_agent.v1.ReviewComment completed_comments = 2;
+    warp.multi_agent.v1.DiffSet diff_set = 3;
+}
+
+message ReviewComment {
+    message CommentedFile {
+        string file_path = 1;
+        warp.multi_agent.v1.CurrentRef current = 2;
+        warp.multi_agent.v1.BaseRef base = 3;
+    }
+
+    message CommentedDiffset {
+        warp.multi_agent.v1.CurrentRef current = 1;
+        warp.multi_agent.v1.BaseRef base = 2;
+    }
+
+    string id = 1;
+    string comment = 2;
+    oneof comment_target {
+        warp.multi_agent.v1.DiffHunk commented_line = 3;
+        warp.multi_agent.v1.ReviewComment.CommentedFile commented_file = 4;
+        warp.multi_agent.v1.ReviewComment.CommentedDiffset commented_diffset = 5;
+    }
+}
+
+message Message {
+    message UserQuery {
+        message ReferencedAttachmentsEntry {
+            string key = 1;
+            warp.multi_agent.v1.Attachment value = 2;
+        }
+
+        string query = 1;
+        warp.multi_agent.v1.InputContext context = 2;
+        repeated warp.multi_agent.v1.Message.UserQuery.ReferencedAttachmentsEntry referenced_attachments = 3;
+        warp.multi_agent.v1.UserQueryMode mode = 4;
+        warp.multi_agent.v1.AgentType intended_agent = 5;
+    }
+
+    message SystemQuery {
+        warp.multi_agent.v1.InputContext context = 2;
+        oneof type {
+            warp.multi_agent.v1.Message.AutoCodeDiff auto_code_diff = 1;
+            warp.multi_agent.v1.Message.ResumeConversation resume_conversation = 3;
+            warp.multi_agent.v1.Message.TriggerSuggestPrompt trigger_suggest_prompt = 4;
+            warp.multi_agent.v1.Message.CreateNewProject create_new_project = 5;
+            warp.multi_agent.v1.Message.CloneRepository clone_repository = 6;
+            warp.multi_agent.v1.Message.SummarizeConversation summarize_conversation = 7;
+            warp.multi_agent.v1.Message.FetchReviewComments fetch_review_comments = 8;
+        }
+    }
+
+    message AutoCodeDiff {
+        string query = 1;
+    }
+
+    message ResumeConversation {
+    }
+
+    message TriggerSuggestPrompt {
+        repeated warp.multi_agent.v1.Attachment attachments = 1;
+        oneof trigger {
+            google.protobuf.Empty files_changed = 2;
+            google.protobuf.Empty command_run = 3;
+        }
+    }
+
+    message CreateNewProject {
+        string query = 1;
+    }
+
+    message CloneRepository {
+        string url = 1;
+    }
+
+    message SummarizeConversation {
+        string prompt = 1;
+    }
+
+    message AgentOutput {
+        string text = 1;
+    }
+
+    message AgentReasoning {
+        string reasoning = 1;
+        google.protobuf.Duration finished_duration = 2;
+    }
+
+    message Summarization {
+        message ConversationSummary {
+            string summary = 1;
+            int32 token_count = 2;
+        }
+
+        message ToolCallResultSummary {
+        }
+
+        google.protobuf.Duration finished_duration = 2;
+        oneof summary_type {
+            warp.multi_agent.v1.Message.Summarization.ConversationSummary conversation_summary = 1;
+            warp.multi_agent.v1.Message.Summarization.ToolCallResultSummary tool_call_result_summary = 3;
+        }
+    }
+
+    message CodeReview {
+        warp.multi_agent.v1.ReviewComments comments = 1;
+    }
+
+    message FetchReviewComments {
+        string repo_path = 1;
+    }
+
+    message ToolCall {
+        message Server {
+            string payload = 1;
+        }
+
+        message RunShellCommand {
+            string command = 1;
+            bool is_read_only = 2;
+            bool uses_pager = 3;
+            repeated warp.multi_agent.v1.Citation citations = 4;
+            bool is_risky = 5;
+            oneof wait_until_complete_value {
+                bool wait_until_complete = 6;
+            }
+        }
+
+        message WriteToLongRunningShellCommand {
+            message Mode {
+                oneof mode {
+                    google.protobuf.Empty raw = 1;
+                    google.protobuf.Empty line = 2;
+                    google.protobuf.Empty block = 3;
+                }
+            }
+
+            bytes input = 1;
+            warp.multi_agent.v1.Message.ToolCall.WriteToLongRunningShellCommand.Mode mode = 2;
+            string command_id = 3;
+        }
+
+        message SuggestNewConversation {
+            string message_id = 1;
+        }
+
+        message ReadFiles {
+            message File {
+                string name = 1;
+                repeated warp.multi_agent.v1.FileContentLineRange line_ranges = 2;
+            }
+
+            repeated warp.multi_agent.v1.Message.ToolCall.ReadFiles.File files = 1;
+        }
+
+        message SearchCodebase {
+            string query = 1;
+            repeated string path_filters = 2;
+            string codebase_path = 3;
+        }
+
+        message ApplyFileDiffs {
+            message FileDiff {
+                string file_path = 1;
+                string search = 2;
+                string replace = 3;
+            }
+
+            message V4AFileUpdate {
+                message Hunk {
+                    repeated string change_context = 1;
+                    string pre_context = 2;
+                    string old = 3;
+                    string new = 4;
+                    string post_context = 5;
+                }
+
+                string file_path = 1;
+                string move_to = 2;
+                repeated warp.multi_agent.v1.Message.ToolCall.ApplyFileDiffs.V4AFileUpdate.Hunk hunks = 3;
+            }
+
+            message NewFile {
+                string file_path = 1;
+                string content = 2;
+            }
+
+            message DeleteFile {
+                string file_path = 1;
+            }
+
+            string summary = 1;
+            repeated warp.multi_agent.v1.Message.ToolCall.ApplyFileDiffs.FileDiff diffs = 2;
+            repeated warp.multi_agent.v1.Message.ToolCall.ApplyFileDiffs.NewFile new_files = 3;
+            repeated warp.multi_agent.v1.Message.ToolCall.ApplyFileDiffs.DeleteFile deleted_files = 4;
+            repeated warp.multi_agent.v1.Message.ToolCall.ApplyFileDiffs.V4AFileUpdate v4a_updates = 5;
+        }
+
+        message SuggestPlan {
+            string summary = 1;
+            repeated warp.multi_agent.v1.Task proposed_tasks = 2;
+        }
+
+        message SuggestCreatePlan {
+        }
+
+        message Grep {
+            repeated string queries = 1;
+            string path = 2;
+        }
+
+        message FileGlob {
+            repeated string patterns = 1;
+            string path = 2;
+        }
+
+        message FileGlobV2 {
+            repeated string patterns = 1;
+            string search_dir = 2;
+            int32 max_matches = 3;
+            int32 max_depth = 4;
+            int32 min_depth = 5;
+        }
+
+        message ReadMCPResource {
+            string uri = 1;
+            string server_id = 2;
+        }
+
+        message CallMCPTool {
+            string name = 1;
+            google.protobuf.Struct args = 2;
+            string server_id = 3;
+        }
+
+        message SuggestPrompt {
+            message InlineQueryBanner {
+                string title = 1;
+                string description = 2;
+                string query = 3;
+            }
+
+            oneof display_mode {
+                warp.multi_agent.v1.Message.ToolCall.SuggestPrompt.InlineQueryBanner inline_query_banner = 1;
+            }
+        }
+
+        message OpenCodeReview {
+        }
+
+        message InitProject {
+        }
+
+        message Subagent {
+            message CLISubagent {
+                string command_id = 1;
+            }
+
+            string task_id = 1;
+            string payload = 2;
+            oneof metadata {
+                warp.multi_agent.v1.Message.ToolCall.Subagent.CLISubagent cli = 3;
+                google.protobuf.Empty research = 4;
+                google.protobuf.Empty advice = 5;
+                google.protobuf.Empty computer_use = 6;
+                google.protobuf.Empty summarization = 7;
+            }
+        }
+
+        message ReadDocuments {
+            message Document {
+                string document_id = 1;
+                repeated warp.multi_agent.v1.FileContentLineRange line_ranges = 2;
+            }
+
+            repeated warp.multi_agent.v1.Message.ToolCall.ReadDocuments.Document documents = 1;
+        }
+
+        message EditDocuments {
+            message DocumentDiff {
+                string document_id = 1;
+                string search = 2;
+                string replace = 3;
+            }
+
+            repeated warp.multi_agent.v1.Message.ToolCall.EditDocuments.DocumentDiff diffs = 1;
+        }
+
+        message CreateDocuments {
+            message NewDocument {
+                string content = 1;
+                string title = 2;
+            }
+
+            repeated warp.multi_agent.v1.Message.ToolCall.CreateDocuments.NewDocument new_documents = 1;
+        }
+
+        message ReadShellCommandOutput {
+            string command_id = 1;
+            oneof delay {
+                google.protobuf.Duration duration = 2;
+                google.protobuf.Empty on_completion = 3;
+            }
+        }
+
+        message InsertReviewComments {
+            message Comment {
+                string comment_id = 1;
+                string author = 2;
+                string last_modified_timestamp = 3;
+                string comment_body = 4;
+                string parent_comment_id = 5;
+                warp.multi_agent.v1.Message.ToolCall.InsertReviewComments.CommentLocation location = 6;
+            }
+
+            message CommentLocation {
+                string file_path = 1;
+                warp.multi_agent.v1.Message.ToolCall.InsertReviewComments.CommentLineRange line = 2;
+            }
+
+            message CommentLineRange {
+                string diff_hunk = 1;
+                warp.multi_agent.v1.FileContentLineRange range = 2;
+            }
+
+            string repo_path = 1;
+            repeated warp.multi_agent.v1.Message.ToolCall.InsertReviewComments.Comment comments = 2;
+        }
+
+        message ReadSkill {
+            string skill_path = 1;
+            string skill_name = 2;
+        }
+
+        message UseComputer {
+            message Action {
+                enum MouseButton {
+                    LEFT = 0;
+                    RIGHT = 1;
+                    MIDDLE = 2;
+                    BACK = 3;
+                    FORWARD = 4;
+                }
+
+                message MouseMove {
+                    warp.multi_agent.v1.Coordinates to = 1;
+                }
+
+                message MouseDown {
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.MouseButton button = 1;
+                    warp.multi_agent.v1.Coordinates at = 2;
+                }
+
+                message MouseUp {
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.MouseButton button = 1;
+                }
+
+                message MouseWheel {
+                    enum Direction {
+                        UP = 0;
+                        DOWN = 1;
+                        LEFT = 2;
+                        RIGHT = 3;
+                    }
+
+                    warp.multi_agent.v1.Coordinates at = 1;
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.MouseWheel.Direction direction = 2;
+                    oneof distance {
+                        int32 pixels = 3;
+                        int32 clicks = 4;
+                    }
+                }
+
+                message Wait {
+                    google.protobuf.Duration duration = 1;
+                }
+
+                message TypeText {
+                    string text = 1;
+                }
+
+                message Key {
+                    oneof data {
+                        int32 keycode = 1;
+                        string char = 2;
+                    }
+                }
+
+                message KeyDown {
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.Key key = 1;
+                }
+
+                message KeyUp {
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.Key key = 2;
+                }
+
+                oneof type {
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.MouseMove mouse_move = 1;
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.MouseDown mouse_down = 2;
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.MouseUp mouse_up = 3;
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.MouseWheel mouse_wheel = 4;
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.Wait wait = 5;
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.TypeText type_text = 6;
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.KeyDown key_down = 7;
+                    warp.multi_agent.v1.Message.ToolCall.UseComputer.Action.KeyUp key_up = 8;
+                }
+            }
+
+            repeated warp.multi_agent.v1.Message.ToolCall.UseComputer.Action actions = 1;
+            warp.multi_agent.v1.Message.ToolCall.ScreenshotParams post_actions_screenshot_params = 2;
+            string action_summary = 3;
+        }
+
+        message RequestComputerUse {
+            string task_summary = 1;
+            warp.multi_agent.v1.Message.ToolCall.ScreenshotParams screenshot_params = 2;
+        }
+
+        message ScreenshotParams {
+            int32 max_long_edge_px = 1;
+            int32 max_total_px = 2;
+        }
+
+        string tool_call_id = 1;
+        oneof tool {
+            warp.multi_agent.v1.Message.ToolCall.RunShellCommand run_shell_command = 2;
+            warp.multi_agent.v1.Message.ToolCall.SearchCodebase search_codebase = 3;
+            warp.multi_agent.v1.Message.ToolCall.Server server = 4;
+            warp.multi_agent.v1.Message.ToolCall.ReadFiles read_files = 5;
+            warp.multi_agent.v1.Message.ToolCall.ApplyFileDiffs apply_file_diffs = 6;
+            warp.multi_agent.v1.Message.ToolCall.SuggestPlan suggest_plan = 7;
+            warp.multi_agent.v1.Message.ToolCall.SuggestCreatePlan suggest_create_plan = 8;
+            warp.multi_agent.v1.Message.ToolCall.Grep grep = 9;
+            warp.multi_agent.v1.Message.ToolCall.FileGlob file_glob = 10;
+            warp.multi_agent.v1.Message.ToolCall.ReadMCPResource read_mcp_resource = 11;
+            warp.multi_agent.v1.Message.ToolCall.CallMCPTool call_mcp_tool = 12;
+            warp.multi_agent.v1.Message.ToolCall.WriteToLongRunningShellCommand write_to_long_running_shell_command = 13;
+            warp.multi_agent.v1.Message.ToolCall.SuggestNewConversation suggest_new_conversation = 14;
+            warp.multi_agent.v1.Message.ToolCall.FileGlobV2 file_glob_v2 = 15;
+            warp.multi_agent.v1.Message.ToolCall.SuggestPrompt suggest_prompt = 16;
+            warp.multi_agent.v1.Message.ToolCall.OpenCodeReview open_code_review = 17;
+            warp.multi_agent.v1.Message.ToolCall.InitProject init_project = 18;
+            warp.multi_agent.v1.Message.ToolCall.Subagent subagent = 19;
+            warp.multi_agent.v1.Message.ToolCall.ReadDocuments read_documents = 20;
+            warp.multi_agent.v1.Message.ToolCall.EditDocuments edit_documents = 21;
+            warp.multi_agent.v1.Message.ToolCall.CreateDocuments create_documents = 22;
+            warp.multi_agent.v1.Message.ToolCall.ReadShellCommandOutput read_shell_command_output = 23;
+            warp.multi_agent.v1.Message.ToolCall.UseComputer use_computer = 24;
+            warp.multi_agent.v1.Message.ToolCall.InsertReviewComments insert_review_comments = 25;
+            warp.multi_agent.v1.Message.ToolCall.ReadSkill read_skill = 26;
+            warp.multi_agent.v1.Message.ToolCall.RequestComputerUse request_computer_use = 27;
+        }
+    }
+
+    message ToolCallResult {
+        message ServerResult {
+            string serialized_result = 1;
+        }
+
+        message SubagentResult {
+            string payload = 1;
+        }
+
+        string tool_call_id = 1;
+        warp.multi_agent.v1.InputContext context = 11;
+        oneof result {
+            warp.multi_agent.v1.RunShellCommandResult run_shell_command = 2;
+            warp.multi_agent.v1.SearchCodebaseResult search_codebase = 3;
+            warp.multi_agent.v1.Message.ToolCallResult.ServerResult server = 4;
+            warp.multi_agent.v1.ReadFilesResult read_files = 5;
+            warp.multi_agent.v1.ApplyFileDiffsResult apply_file_diffs = 6;
+            warp.multi_agent.v1.SuggestPlanResult suggest_plan = 7;
+            warp.multi_agent.v1.SuggestCreatePlanResult suggest_create_plan = 8;
+            warp.multi_agent.v1.GrepResult grep = 9;
+            warp.multi_agent.v1.FileGlobResult file_glob = 10;
+            google.protobuf.Empty cancel = 14;
+            warp.multi_agent.v1.ReadMCPResourceResult read_mcp_resource = 15;
+            warp.multi_agent.v1.CallMCPToolResult call_mcp_tool = 16;
+            warp.multi_agent.v1.WriteToLongRunningShellCommandResult write_to_long_running_shell_command = 17;
+            warp.multi_agent.v1.SuggestNewConversationResult suggest_new_conversation = 18;
+            warp.multi_agent.v1.FileGlobV2Result file_glob_v2 = 19;
+            warp.multi_agent.v1.SuggestPromptResult suggest_prompt = 20;
+            warp.multi_agent.v1.OpenCodeReviewResult open_code_review = 21;
+            warp.multi_agent.v1.InitProjectResult init_project = 22;
+            warp.multi_agent.v1.Message.ToolCallResult.SubagentResult subagent = 23;
+            warp.multi_agent.v1.ReadDocumentsResult read_documents = 24;
+            warp.multi_agent.v1.EditDocumentsResult edit_documents = 25;
+            warp.multi_agent.v1.CreateDocumentsResult create_documents = 26;
+            warp.multi_agent.v1.ReadShellCommandOutputResult read_shell_command_output = 27;
+            warp.multi_agent.v1.UseComputerResult use_computer = 28;
+            warp.multi_agent.v1.InsertReviewCommentsResult insert_review_comments = 29;
+            warp.multi_agent.v1.ReadSkillResult read_skill = 30;
+            warp.multi_agent.v1.RequestComputerUseResult request_computer_use_result = 31;
+        }
+    }
+
+    message ServerEvent {
+        string payload = 1;
+    }
+
+    message UpdateTodos {
+        oneof operation {
+            warp.multi_agent.v1.CreateTodoList create_todo_list = 1;
+            warp.multi_agent.v1.UpdatePendingTodos update_pending_todos = 2;
+            warp.multi_agent.v1.MarkTodosCompleted mark_todos_completed = 3;
+        }
+    }
+
+    message UpdateReviewComments {
+        message AddressReviewComments {
+            repeated string comment_ids = 1;
+        }
+
+        oneof operation {
+            warp.multi_agent.v1.Message.UpdateReviewComments.AddressReviewComments address_review_comments = 1;
+        }
+    }
+
+    message WebSearch {
+        message Status {
+            message Searching {
+                string query = 1;
+            }
+
+            message Success {
+                message SearchedPage {
+                    string url = 1;
+                    string title = 2;
+                }
+
+                string query = 1;
+                repeated warp.multi_agent.v1.Message.WebSearch.Status.Success.SearchedPage pages = 2;
+            }
+
+            oneof type {
+                warp.multi_agent.v1.Message.WebSearch.Status.Searching searching = 1;
+                warp.multi_agent.v1.Message.WebSearch.Status.Success success = 2;
+                google.protobuf.Empty error = 3;
+            }
+        }
+
+        warp.multi_agent.v1.Message.WebSearch.Status status = 1;
+    }
+
+    message WebFetch {
+        message Status {
+            message Fetching {
+                repeated string urls = 1;
+            }
+
+            message Success {
+                message FetchedPage {
+                    string url = 1;
+                    string title = 2;
+                    bool success = 3;
+                }
+
+                repeated warp.multi_agent.v1.Message.WebFetch.Status.Success.FetchedPage pages = 1;
+            }
+
+            oneof type {
+                warp.multi_agent.v1.Message.WebFetch.Status.Fetching fetching = 1;
+                warp.multi_agent.v1.Message.WebFetch.Status.Success success = 2;
+                google.protobuf.Empty error = 3;
+            }
+        }
+
+        warp.multi_agent.v1.Message.WebFetch.Status status = 1;
+    }
+
+    message DebugOutput {
+        string text = 1;
+    }
+
+    string id = 1;
+    string task_id = 11;
+    string request_id = 13;
+    google.protobuf.Timestamp timestamp = 14;
+    string server_message_data = 7;
+    repeated warp.multi_agent.v1.Citation citations = 8;
+    oneof message {
+        warp.multi_agent.v1.Message.UserQuery user_query = 2;
+        warp.multi_agent.v1.Message.AgentOutput agent_output = 3;
+        warp.multi_agent.v1.Message.ToolCall tool_call = 4;
+        warp.multi_agent.v1.Message.ToolCallResult tool_call_result = 5;
+        warp.multi_agent.v1.Message.ServerEvent server_event = 6;
+        warp.multi_agent.v1.Message.SystemQuery system_query = 9;
+        warp.multi_agent.v1.Message.UpdateTodos update_todos = 10;
+        warp.multi_agent.v1.Message.AgentReasoning agent_reasoning = 15;
+        warp.multi_agent.v1.Message.Summarization summarization = 16;
+        warp.multi_agent.v1.Message.CodeReview code_review = 17;
+        warp.multi_agent.v1.Message.UpdateReviewComments update_review_comments = 18;
+        warp.multi_agent.v1.Message.WebSearch web_search = 19;
+        warp.multi_agent.v1.Message.WebFetch web_fetch = 20;
+        warp.multi_agent.v1.Message.DebugOutput debug_output = 21;
+    }
+}
+
+message RunShellCommandResult {
+    string command = 3;
+    string output = 1;
+    int32 exit_code = 2;
+    oneof result {
+        warp.multi_agent.v1.LongRunningShellCommandSnapshot long_running_command_snapshot = 4;
+        warp.multi_agent.v1.ShellCommandFinished command_finished = 5;
+        warp.multi_agent.v1.PermissionDenied permission_denied = 6;
+    }
+}
+
+message ReadFilesResult {
+    message TextFilesSuccess {
+        repeated warp.multi_agent.v1.FileContent files = 1;
+    }
+
+    message AnyFilesSuccess {
+        repeated warp.multi_agent.v1.AnyFileContent files = 1;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.ReadFilesResult.TextFilesSuccess text_files_success = 1;
+        warp.multi_agent.v1.ReadFilesResult.AnyFilesSuccess any_files_success = 3;
+        warp.multi_agent.v1.ReadFilesResult.Error error = 2;
+    }
+}
+
+message SearchCodebaseResult {
+    message Success {
+        repeated warp.multi_agent.v1.FileContent files = 1;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.SearchCodebaseResult.Success success = 1;
+        warp.multi_agent.v1.SearchCodebaseResult.Error error = 2;
+    }
+}
+
+message ApplyFileDiffsResult {
+    message Success {
+        message UpdatedFileContent {
+            warp.multi_agent.v1.FileContent file = 1;
+            bool was_edited_by_user = 2;
+        }
+
+        message DeletedFile {
+            string file_path = 1;
+        }
+
+        repeated warp.multi_agent.v1.FileContent updated_files = 1;
+        repeated warp.multi_agent.v1.ApplyFileDiffsResult.Success.UpdatedFileContent updated_files_v2 = 2;
+        repeated warp.multi_agent.v1.ApplyFileDiffsResult.Success.DeletedFile deleted_files = 3;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.ApplyFileDiffsResult.Success success = 1;
+        warp.multi_agent.v1.ApplyFileDiffsResult.Error error = 2;
+    }
+}
+
+message SuggestCreatePlanResult {
+    bool accepted = 1;
+}
+
+message SuggestPlanResult {
+    message UserEditedPlan {
+        string plan_text = 1;
+    }
+
+    oneof result {
+        google.protobuf.Empty accepted = 1;
+        warp.multi_agent.v1.SuggestPlanResult.UserEditedPlan user_edited_plan = 2;
+    }
+}
+
+message GrepResult {
+    message Success {
+        message GrepFileMatch {
+            message GrepLineMatch {
+                uint32 line_number = 1;
+            }
+
+            string file_path = 1;
+            repeated warp.multi_agent.v1.GrepResult.Success.GrepFileMatch.GrepLineMatch matched_lines = 2;
+        }
+
+        repeated warp.multi_agent.v1.GrepResult.Success.GrepFileMatch matched_files = 1;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.GrepResult.Success success = 1;
+        warp.multi_agent.v1.GrepResult.Error error = 2;
+    }
+}
+
+message FileGlobResult {
+    message Success {
+        string matched_files = 1;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.FileGlobResult.Success success = 1;
+        warp.multi_agent.v1.FileGlobResult.Error error = 2;
+    }
+}
+
+message FileGlobV2Result {
+    message Success {
+        message FileGlobMatch {
+            string file_path = 1;
+        }
+
+        repeated warp.multi_agent.v1.FileGlobV2Result.Success.FileGlobMatch matched_files = 1;
+        string warnings = 2;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.FileGlobV2Result.Success success = 1;
+        warp.multi_agent.v1.FileGlobV2Result.Error error = 2;
+    }
+}
+
+message MCPResourceContent {
+    message Text {
+        string content = 1;
+        string mime_type = 2;
+    }
+
+    message Binary {
+        bytes data = 1;
+        string mime_type = 2;
+    }
+
+    string uri = 1;
+    oneof content_type {
+        warp.multi_agent.v1.MCPResourceContent.Text text = 2;
+        warp.multi_agent.v1.MCPResourceContent.Binary binary = 3;
+    }
+}
+
+message ReadMCPResourceResult {
+    message Success {
+        repeated warp.multi_agent.v1.MCPResourceContent contents = 1;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.ReadMCPResourceResult.Success success = 1;
+        warp.multi_agent.v1.ReadMCPResourceResult.Error error = 2;
+    }
+}
+
+message WriteToLongRunningShellCommandResult {
+    oneof result {
+        warp.multi_agent.v1.LongRunningShellCommandSnapshot long_running_command_snapshot = 1;
+        warp.multi_agent.v1.ShellCommandFinished command_finished = 2;
+        warp.multi_agent.v1.ShellCommandError error = 3;
+    }
+}
+
+message SuggestNewConversationResult {
+    message Accepted {
+        string message_id = 1;
+    }
+
+    message Rejected {
+    }
+
+    oneof result {
+        warp.multi_agent.v1.SuggestNewConversationResult.Accepted accepted = 1;
+        warp.multi_agent.v1.SuggestNewConversationResult.Rejected rejected = 2;
+    }
+}
+
+message ShellCommandFinished {
+    string output = 1;
+    int32 exit_code = 2;
+    string command_id = 3;
+}
+
+message PermissionDenied {
+    oneof reason {
+        google.protobuf.Empty denylisted_command = 1;
+    }
+}
+
+message CallMCPToolResult {
+    message Success {
+        message Result {
+            message Text {
+                string text = 1;
+            }
+
+            message Image {
+                bytes data = 1;
+                string mime_type = 2;
+            }
+
+            oneof result {
+                warp.multi_agent.v1.CallMCPToolResult.Success.Result.Text text = 1;
+                warp.multi_agent.v1.CallMCPToolResult.Success.Result.Image image = 2;
+                warp.multi_agent.v1.MCPResourceContent resource = 3;
+            }
+        }
+
+        repeated warp.multi_agent.v1.CallMCPToolResult.Success.Result results = 1;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.CallMCPToolResult.Success success = 1;
+        warp.multi_agent.v1.CallMCPToolResult.Error error = 2;
+    }
+}
+
+message SuggestPromptResult {
+    oneof result {
+        google.protobuf.Empty accepted = 1;
+        google.protobuf.Empty rejected = 2;
+    }
+}
+
+message OpenCodeReviewResult {
+}
+
+message InitProjectResult {
+}
+
+message ReadDocumentsResult {
+    message Success {
+        repeated warp.multi_agent.v1.DocumentContent documents = 1;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.ReadDocumentsResult.Success success = 1;
+        warp.multi_agent.v1.ReadDocumentsResult.Error error = 2;
+    }
+}
+
+message EditDocumentsResult {
+    message Success {
+        repeated warp.multi_agent.v1.DocumentContent updated_documents = 1;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.EditDocumentsResult.Success success = 1;
+        warp.multi_agent.v1.EditDocumentsResult.Error error = 2;
+    }
+}
+
+message CreateDocumentsResult {
+    message Success {
+        repeated warp.multi_agent.v1.DocumentContent created_documents = 1;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.CreateDocumentsResult.Success success = 1;
+        warp.multi_agent.v1.CreateDocumentsResult.Error error = 2;
+    }
+}
+
+message ReadShellCommandOutputResult {
+    string command = 1;
+    oneof result {
+        warp.multi_agent.v1.LongRunningShellCommandSnapshot long_running_command_snapshot = 2;
+        warp.multi_agent.v1.ShellCommandFinished command_finished = 3;
+        warp.multi_agent.v1.ShellCommandError error = 4;
+    }
+}
+
+message InsertReviewCommentsResult {
+    message Success {
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    string repo_path = 1;
+    oneof result {
+        warp.multi_agent.v1.InsertReviewCommentsResult.Success success = 2;
+        warp.multi_agent.v1.InsertReviewCommentsResult.Error error = 3;
+    }
+}
+
+message Coordinates {
+    int32 x = 1;
+    int32 y = 2;
+}
+
+message UseComputerResult {
+    message Success {
+        warp.multi_agent.v1.RawImage screenshot = 1;
+        warp.multi_agent.v1.Coordinates cursor_position = 2;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.UseComputerResult.Success success = 1;
+        warp.multi_agent.v1.UseComputerResult.Error error = 2;
+    }
+}
+
+message ReadSkillResult {
+    message Success {
+        warp.multi_agent.v1.FileContent content = 1;
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.ReadSkillResult.Success success = 1;
+        warp.multi_agent.v1.ReadSkillResult.Error error = 2;
+    }
+}
+
+message ScreenDimensions {
+    int32 width_px = 1;
+    int32 height_px = 2;
+}
+
+message RequestComputerUseResult {
+    message Approved {
+        enum Platform {
+            MACOS = 0;
+            WINDOWS = 1;
+            LINUX_X11 = 2;
+        }
+
+        warp.multi_agent.v1.ScreenDimensions screen_dimensions = 1;
+        warp.multi_agent.v1.RawImage initial_screenshot = 2;
+        warp.multi_agent.v1.RequestComputerUseResult.Approved.Platform platform = 3;
+    }
+
+    message Rejected {
+    }
+
+    message Error {
+        string message = 1;
+    }
+
+    oneof result {
+        warp.multi_agent.v1.RequestComputerUseResult.Approved approved = 1;
+        warp.multi_agent.v1.RequestComputerUseResult.Rejected rejected = 2;
+        warp.multi_agent.v1.RequestComputerUseResult.Error error = 3;
+    }
+}
+
+message ShellCommandError {
+    oneof type {
+        google.protobuf.Empty command_not_found = 1;
+    }
+}
+
+message UserQueryMode {
+    oneof type {
+        google.protobuf.Empty plan = 1;
+    }
+}
+
+message RawImage {
+    bytes data = 1;
+    string mime_type = 2;
+}
