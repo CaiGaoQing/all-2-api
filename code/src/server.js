@@ -2209,7 +2209,11 @@ app.post('/v1/messages', async (req, res) => {
                 const durationMs = Date.now() - startTime;
                 const errorStatus = streamError.status || streamError.response?.status || 500;
 
-                console.error(`  ✗ ${durationMs}ms | error: ${streamError.message}`);
+                // 详细错误日志：打印请求参数
+                console.error(`[API] /v1/messages 错误 | status=${errorStatus} | ${durationMs}ms`);
+                console.error(`  model=${requestModel} | stream=true | messages=${messages?.length || 0}条 | tools=${tools?.length || 0}个`);
+                if (system) console.error(`  system=${typeof system === 'string' ? system.length : JSON.stringify(system).length}字符`);
+                console.error(`  error: ${streamError.message}`);
 
                 await apiLogStore.update(requestId, {
                     outputTokens,
@@ -2303,7 +2307,11 @@ app.post('/v1/messages', async (req, res) => {
                 const durationMs = Date.now() - startTime;
                 const errorStatus = error.status || error.response?.status || 500;
 
-                console.error(`  ✗ ${durationMs}ms | error: ${error.message}`);
+                // 详细错误日志：打印请求参数
+                console.error(`[API] /v1/messages 错误 | status=${errorStatus} | ${durationMs}ms`);
+                console.error(`  model=${requestModel} | stream=false | messages=${messages?.length || 0}条 | tools=${tools?.length || 0}个`);
+                if (system) console.error(`  system=${typeof system === 'string' ? system.length : JSON.stringify(system).length}字符`);
+                console.error(`  error: ${error.message}`);
 
                 logData.statusCode = errorStatus;
                 logData.errorMessage = error.message;
@@ -2336,7 +2344,12 @@ app.post('/v1/messages', async (req, res) => {
         logData.errorMessage = error.message;
         logData.durationMs = durationMs;
 
-        console.error(`  ✗ ${durationMs}ms | error: ${error.message}`);
+        // 详细错误日志：打印请求参数
+        const { model, messages, tools, system, stream } = req.body || {};
+        console.error(`[API] /v1/messages 外层错误 | status=${outerErrorStatus} | ${durationMs}ms`);
+        console.error(`  model=${model || '?'} | stream=${!!stream} | messages=${messages?.length || 0}条 | tools=${tools?.length || 0}个`);
+        if (system) console.error(`  system=${typeof system === 'string' ? system.length : JSON.stringify(system).length}字符`);
+        console.error(`  error: ${error.message}`);
 
         // 记录错误日志
         if (!logData.apiKeyId) {

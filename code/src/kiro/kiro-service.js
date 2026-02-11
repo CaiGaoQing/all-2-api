@@ -391,56 +391,36 @@ export class KiroService {
         let toolsContext = {};
         let hasWebSearch = false;
         if (options.tools && Array.isArray(options.tools) && options.tools.length > 0) {
-            // 检查是否有 WebSearch 工具
             hasWebSearch = this.hasWebSearchTool(options.tools);
-            
-            // 过滤掉 Bash 工具，但保留 WebSearch
-            const filteredTools = options.tools.filter(tool => tool.name !== 'Bash');
+
+            // 过滤并限制工具数量（最多 25 个）
+            const filteredTools = options.tools
+                .filter(tool => tool.name !== 'Bash')
+                .slice(0, 25);
+
             if (filteredTools.length > 0) {
                 toolsContext = {
                     tools: filteredTools.map(tool => {
-                        // 如果是 web_search 工具，使用完整的定义
                         if (tool.name === 'web_search' || tool.name === 'WebSearch') {
                             return {
                                 toolSpecification: {
                                     name: 'web_search',
-                                    description: 'Search the web for real-time information. Returns search results with titles, URLs, snippets, and publication dates.',
-                                    inputSchema: {
-                                        json: {
-                                            type: 'object',
-                                            properties: {
-                                                query: {
-                                                    type: 'string',
-                                                    description: 'The search query to execute'
-                                                }
-                                            },
-                                            required: ['query'],
-                                            additionalProperties: false
-                                        }
-                                    }
+                                    description: 'Search the web for real-time information.',
+                                    inputSchema: { json: { type: 'object', properties: { query: { type: 'string' } }, required: ['query'] } }
                                 }
                             };
                         }
 
-                        // 为 Write/Edit 类工具添加限制规则
-                        let description = tool.description || "";
-                        const toolNameLower = tool.name.toLowerCase();
-                        if (toolNameLower.includes('write') || toolNameLower === 'write_to_file') {
-                            const writeLimit = "\n\n**IMPORTANT LIMITS**: Do NOT write more than 200 lines or 3000 characters in a single call. For larger files, split into multiple sequential writes. Always escape special characters properly in JSON (use \\\\n for newlines, \\\\ for backslashes, \\\" for quotes).";
-                            if (!description.includes('IMPORTANT LIMITS')) {
-                                description += writeLimit;
-                            }
-                        } else if (toolNameLower.includes('edit') || toolNameLower === 'str_replace_editor') {
-                            const editLimit = "\n\n**IMPORTANT LIMITS**: Do NOT edit more than 150 lines or 2500 characters in old_string/new_string. For larger changes, split into multiple sequential edits. Always escape special characters properly in JSON.";
-                            if (!description.includes('IMPORTANT LIMITS')) {
-                                description += editLimit;
-                            }
+                        // 截断过长的描述（最多 500 字符）
+                        let desc = tool.description || '';
+                        if (desc.length > 500) {
+                            desc = desc.substring(0, 497) + '...';
                         }
 
                         return {
                             toolSpecification: {
                                 name: tool.name,
-                                description: description,
+                                description: desc,
                                 inputSchema: { json: tool.input_schema || {} }
                             }
                         };
@@ -1048,7 +1028,16 @@ export class KiroService {
                             if (typeof errorBody.pipe === 'function' || errorBody._readableState) {
                                 console.error('  Body: [Stream object - cannot serialize]');
                             } else {
-                                console.error('  Body:', JSON.stringify(errorBody, null, 2));
+                                // 使用安全的序列化方法，处理循环引用
+                                const seen = new WeakSet();
+                                const safeStringify = (obj) => JSON.stringify(obj, (key, value) => {
+                                    if (typeof value === 'object' && value !== null) {
+                                        if (seen.has(value)) return '[Circular]';
+                                        seen.add(value);
+                                    }
+                                    return value;
+                                }, 2);
+                                console.error('  Body:', safeStringify(errorBody));
                             }
                         }
                     } catch (jsonErr) {
