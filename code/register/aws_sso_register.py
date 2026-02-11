@@ -18,8 +18,8 @@ if sys.platform == 'win32':
     sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
 
 # ================= 配置区 =================
-AWS_SSO_URL = "https://us-east-1.console.aws.amazon.com/singlesignon/home?region=us-east-1&tab=groups#/instances/7223e694c7b27a0d/users"
-AWS_LOGIN_URL = "https://927006997781.signin.aws.amazon.com/console"
+AWS_SSO_URL = "https://us-east-1.console.aws.amazon.com/singlesignon/home?region=us-east-1#/instances/72234076f09f803e/users"
+AWS_LOGIN_URL = "https://aws.amazon.com/cn/console/"
 DEFAULT_PASSWORD = "4561230wW?"
 
 # ================= 工具函数 =================
@@ -1497,7 +1497,7 @@ def create_user_via_browser(driver, wait, email, given_name, family_name):
         return False
 
 
-def register_users(count, aws_username, aws_password, headless=False):
+def register_users(count, aws_username=None, aws_password=None, headless=False, manual_login=False):
     """批量注册用户"""
     try:
         import undetected_chromedriver as uc
@@ -1526,10 +1526,20 @@ def register_users(count, aws_username, aws_password, headless=False):
         driver = uc.Chrome(version_main=144, options=options, use_subprocess=True)
         wait = WebDriverWait(driver, 30)
 
-        # 登录 AWS
-        if not login_aws_console(driver, wait, aws_username, aws_password):
-            log("[FAIL] AWS 登录失败，退出", "ERR")
-            return []
+        if manual_login:
+            # 手动登录模式：打开登录页面，等待用户手动登录
+            log("打开 AWS 登录页面，请手动登录...")
+            driver.get(AWS_LOGIN_URL)
+            input("\n>>> 请在浏览器中完成登录，登录成功后按 Enter 键继续...")
+            log("[OK] 用户确认已登录，继续执行...")
+        else:
+            # 自动登录模式
+            if not aws_username or not aws_password:
+                log("[FAIL] 自动登录模式需要提供用户名和密码", "ERR")
+                return []
+            if not login_aws_console(driver, wait, aws_username, aws_password):
+                log("[FAIL] AWS 登录失败，退出", "ERR")
+                return []
 
         # 批量创建用户
         for i in range(count):
@@ -1567,33 +1577,43 @@ def register_users(count, aws_username, aws_password, headless=False):
         log(f"[FAIL] 发生异常: {e}", "ERR")
     finally:
         if driver:
-            try:
-                input("按 Enter 键关闭浏览器...")  # 调试用，可以注释掉
-                driver.quit()
-            except:
-                pass
+            log("[INFO] 注册完成，浏览器保持打开状态")
+            log("[INFO] 请手动关闭浏览器窗口")
+            # 不自动关闭浏览器，让用户手动关闭
 
     return created_users
 
 
 def main():
     parser = argparse.ArgumentParser(description='AWS IAM Identity Center 用户注册工具 (浏览器版)')
-    parser.add_argument('--username', '-u', type=str, required=True, help='AWS IAM 用户名')
-    parser.add_argument('--password', '-p', type=str, required=True, help='AWS IAM 密码')
+    parser.add_argument('--username', '-u', type=str, help='AWS IAM 用户名 (手动登录模式下可省略)')
+    parser.add_argument('--password', '-p', type=str, help='AWS IAM 密码 (手动登录模式下可省略)')
     parser.add_argument('--count', '-c', type=int, default=1, help='创建用户数量 (默认: 1)')
     parser.add_argument('--headless', action='store_true', help='无头模式运行')
+    parser.add_argument('--manual', '-m', action='store_true', default=True, help='手动登录模式：打开浏览器后等待用户手动登录 (默认)')
+    parser.add_argument('--auto', '-a', action='store_true', help='自动登录模式：需要提供用户名和密码')
 
     args = parser.parse_args()
 
+    # 如果指定了 --auto，则关闭手动模式
+    if args.auto:
+        args.manual = False
+
+    # 检查参数
+    if not args.manual and (not args.username or not args.password):
+        parser.error("自动登录模式需要提供 --username 和 --password")
+
     log("[START] AWS IAM Identity Center 用户注册 (浏览器版)")
     log(f"[CONFIG] 创建数量: {args.count}")
+    log(f"[CONFIG] 登录模式: {'手动登录' if args.manual else '自动登录'}")
     log(f"[CONFIG] 无头模式: {'是' if args.headless else '否'}")
 
     created_users = register_users(
         count=args.count,
         aws_username=args.username,
         aws_password=args.password,
-        headless=args.headless
+        headless=args.headless,
+        manual_login=args.manual
     )
 
     print(f"\n{'='*30}", flush=True)

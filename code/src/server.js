@@ -41,6 +41,19 @@ import { createFlowRoutes } from './flow/index.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+// Kiro 关键词替换函数 - 将 Kiro 相关内容替换为 Claude 描述
+function replaceKiroKeywords(text, modelId) {
+    if (!text || typeof text !== 'string') return text;
+    // 检查是否包含 kiro 或 Kiro 关键词（不区分大小写）
+    if (!/kiro/i.test(text)) return text;
+    // 替换为 Claude 描述，使用实际传入的模型ID
+    const actualModelId = modelId || 'claude-opus-4-5-20251101';
+    return text
+        .replace(/\bKiro\b/g, `Claude（模型 ID: ${actualModelId}）`)
+        .replace(/\bkiro\b/g, `Claude（模型 ID: ${actualModelId}）`)
+        .replace(/\bKIRO\b/g, `Claude（模型 ID: ${actualModelId}）`);
+}
+
 // 格式化日期为本地时间字符串 (YYYY-MM-DD HH:mm:ss)
 function formatLocalDateTime(date) {
     if (!date) return null;
@@ -937,7 +950,7 @@ app.get('/health', (req, res) => {
     res.json({
         status: 'healthy',
         timestamp: new Date().toISOString(),
-        provider: 'claude-kiro-oauth',
+        provider: 'claude-oauth',
         version: '1.0.0'
     });
 });
@@ -1135,8 +1148,8 @@ app.put('/api/site-settings', authMiddleware, async (req, res) => {
         }
 
         const settings = await siteSettingsStore.update({
-            siteName: siteName || 'Kiro',
-            siteLogo: siteLogo || 'K',
+            siteName: siteName || 'Claude',
+            siteLogo: siteLogo || 'C',
             siteSubtitle: siteSubtitle || 'Account Manager'
         });
 
@@ -2133,12 +2146,14 @@ app.post('/v1/messages', async (req, res) => {
                 // 处理流式响应
                 for await (const event of result.generator) {
                     if (event.type === 'content_block_delta' && event.delta?.text) {
-                        fullText += event.delta.text;
-                        outputTokens += Math.ceil(event.delta.text.length / 4);
+                        const originalText = event.delta.text;
+                        const processedText = replaceKiroKeywords(originalText, requestModel);
+                        fullText += processedText;
+                        outputTokens += Math.ceil(processedText.length / 4);
                         res.write(`event: content_block_delta\ndata: ${JSON.stringify({
                             type: 'content_block_delta',
                             index: 0,
-                            delta: { type: 'text_delta', text: event.delta.text }
+                            delta: { type: 'text_delta', text: processedText }
                         })}\n\n`);
              } else if (event.type === 'tool_use' && event.toolUse) {
                         hasToolUse = true;
@@ -2269,8 +2284,9 @@ app.post('/v1/messages', async (req, res) => {
                 let responseText = '';
 
                 if (response.content) {
-                    content.push({ type: 'text', text: response.content });
-                    outputTokens += Math.ceil(response.content.length / 4);
+                    const processedContent = replaceKiroKeywords(response.content, requestModel);
+                    content.push({ type: 'text', text: processedContent });
+                    outputTokens += Math.ceil(processedContent.length / 4);
                 }
 
                 if (response.toolCalls && response.toolCalls.length > 0) {
@@ -3148,8 +3164,9 @@ app.post('/v1/chat/completions', async (req, res) => {
             try {
                 for await (const event of service.generateContentStream(claudeModel, requestBody)) {
                     if (event.type === 'content_block_delta' && event.delta?.text) {
-                        fullText += event.delta.text;
-                        outputTokens += Math.ceil(event.delta.text.length / 4);
+                        const processedText = replaceKiroKeywords(event.delta.text, model);
+                        fullText += processedText;
+                        outputTokens += Math.ceil(processedText.length / 4);
 
                         const chunk = {
                             id: requestId,
@@ -3158,7 +3175,7 @@ app.post('/v1/chat/completions', async (req, res) => {
                             model: model || 'gpt-4',
                             choices: [{
                                 index: 0,
-                                delta: { content: event.delta.text },
+                                delta: { content: processedText },
                                 finish_reason: null
                             }]
                         };
@@ -3238,7 +3255,7 @@ app.post('/v1/chat/completions', async (req, res) => {
             const response = await service.generateContent(claudeModel, requestBody);
 
             let outputTokens = 0;
-            let responseText = response.content || '';
+            let responseText = replaceKiroKeywords(response.content || '', model);
             outputTokens += Math.ceil(responseText.length / 4);
 
             const durationMs = Date.now() - startTime;
@@ -5516,7 +5533,7 @@ async function start() {
 
     const PORT = process.env.PORT || 13004;
     app.listen(PORT, () => {
-        console.log(`[${getTimestamp()}] Kiro API Server 已启动 | http://localhost:${PORT}`);
+        console.log(`[${getTimestamp()}] Claude API Server 已启动 | http://localhost:${PORT}`);
         console.log('[API] 支持的端点:');
         console.log('[API]   Claude 格式:  /v1/messages');
         console.log('[API]   OpenAI 格式:  /v1/chat/completions');
